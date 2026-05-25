@@ -14,7 +14,291 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      confirmations: {
+        Row: {
+          created_at: string
+          game_id: string
+          id: string
+          player_id: string
+          status: Database["public"]["Enums"]["confirmation_status"]
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          game_id: string
+          id?: string
+          player_id: string
+          status?: Database["public"]["Enums"]["confirmation_status"]
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          game_id?: string
+          id?: string
+          player_id?: string
+          status?: Database["public"]["Enums"]["confirmation_status"]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "confirmations_game_id_fkey"
+            columns: ["game_id"]
+            isOneToOne: false
+            referencedRelation: "games"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "confirmations_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      games: {
+        Row: {
+          contribution_amount: number
+          created_at: string
+          date: string
+          id: string
+          location_id: string | null
+          max_players: number
+          notes: string | null
+          status: Database["public"]["Enums"]["game_status"]
+          time: string
+          title: string
+        }
+        Insert: {
+          contribution_amount?: number
+          created_at?: string
+          date: string
+          id?: string
+          location_id?: string | null
+          max_players?: number
+          notes?: string | null
+          status?: Database["public"]["Enums"]["game_status"]
+          time: string
+          title: string
+        }
+        Update: {
+          contribution_amount?: number
+          created_at?: string
+          date?: string
+          id?: string
+          location_id?: string | null
+          max_players?: number
+          notes?: string | null
+          status?: Database["public"]["Enums"]["game_status"]
+          time?: string
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "games_location_id_fkey"
+            columns: ["location_id"]
+            isOneToOne: false
+            referencedRelation: "locations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      invite_codes: {
+        Row: {
+          code: string
+          created_at: string
+          created_by: string | null
+          id: string
+          is_admin: boolean
+          status: Database["public"]["Enums"]["invite_status"]
+          used_by: string | null
+        }
+        Insert: {
+          code: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_admin?: boolean
+          status?: Database["public"]["Enums"]["invite_status"]
+          used_by?: string | null
+        }
+        Update: {
+          code?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_admin?: boolean
+          status?: Database["public"]["Enums"]["invite_status"]
+          used_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "invite_codes_created_by_fk"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invite_codes_used_by_fk"
+            columns: ["used_by"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      locations: {
+        Row: {
+          address: string | null
+          created_at: string
+          id: string
+          maps_url: string | null
+          name: string
+          photo_url: string | null
+        }
+        Insert: {
+          address?: string | null
+          created_at?: string
+          id?: string
+          maps_url?: string | null
+          name: string
+          photo_url?: string | null
+        }
+        Update: {
+          address?: string | null
+          created_at?: string
+          id?: string
+          maps_url?: string | null
+          name?: string
+          photo_url?: string | null
+        }
+        Relationships: []
+      }
+      payments: {
+        Row: {
+          amount: number
+          created_at: string
+          game_id: string
+          id: string
+          notes: string | null
+          paid_at: string | null
+          player_id: string
+          status: Database["public"]["Enums"]["payment_status"]
+          updated_at: string
+        }
+        Insert: {
+          amount?: number
+          created_at?: string
+          game_id: string
+          id?: string
+          notes?: string | null
+          paid_at?: string | null
+          player_id: string
+          status?: Database["public"]["Enums"]["payment_status"]
+          updated_at?: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          game_id?: string
+          id?: string
+          notes?: string | null
+          paid_at?: string | null
+          player_id?: string
+          status?: Database["public"]["Enums"]["payment_status"]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payments_game_id_fkey"
+            columns: ["game_id"]
+            isOneToOne: false
+            referencedRelation: "games"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payments_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      player_sessions: {
+        Row: {
+          created_at: string
+          id: string
+          last_used_at: string
+          player_id: string
+          token: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          last_used_at?: string
+          player_id: string
+          token: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          last_used_at?: string
+          player_id?: string
+          token?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "player_sessions_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      players: {
+        Row: {
+          avatar_url: string | null
+          created_at: string
+          id: string
+          invite_code_id: string | null
+          is_admin: boolean
+          is_blocked: boolean
+          name: string
+          position: Database["public"]["Enums"]["player_position"]
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string
+          id?: string
+          invite_code_id?: string | null
+          is_admin?: boolean
+          is_blocked?: boolean
+          name: string
+          position: Database["public"]["Enums"]["player_position"]
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string
+          id?: string
+          invite_code_id?: string | null
+          is_admin?: boolean
+          is_blocked?: boolean
+          name?: string
+          position?: Database["public"]["Enums"]["player_position"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "players_invite_code_id_fkey"
+            columns: ["invite_code_id"]
+            isOneToOne: false
+            referencedRelation: "invite_codes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
@@ -23,7 +307,11 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      [_ in never]: never
+      confirmation_status: "confirmed" | "cancelled"
+      game_status: "scheduled" | "cancelled" | "done"
+      invite_status: "pending" | "used" | "blocked" | "revoked"
+      payment_status: "paid" | "pending" | "late" | "exempt"
+      player_position: "goleiro" | "defensor" | "meio" | "atacante"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +438,12 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      confirmation_status: ["confirmed", "cancelled"],
+      game_status: ["scheduled", "cancelled", "done"],
+      invite_status: ["pending", "used", "blocked", "revoked"],
+      payment_status: ["paid", "pending", "late", "exempt"],
+      player_position: ["goleiro", "defensor", "meio", "atacante"],
+    },
   },
 } as const
