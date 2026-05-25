@@ -17,7 +17,7 @@ export const adminListCodes = createServerFn({ method: "GET" }).handler(async ()
   await requireAdmin();
   const { data } = await supabaseAdmin
     .from("invite_codes")
-    .select("*, players:used_by(id, name, avatar_url, is_blocked)")
+    .select("*, players!invite_codes_used_by_fk(id, name, avatar_url, is_blocked)")
     .order("created_at", { ascending: false });
   return data ?? [];
 });

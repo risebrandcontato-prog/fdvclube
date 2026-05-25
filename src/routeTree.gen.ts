@@ -11,7 +11,21 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SuspendedRouteImport } from './routes/suspended'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
+import { Route as AppRouteImport } from './routes/app'
+import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AppIndexRouteImport } from './routes/app.index'
+import { Route as AdminIndexRouteImport } from './routes/admin.index'
+import { Route as AppPerfilRouteImport } from './routes/app.perfil'
+import { Route as AppPagamentosRouteImport } from './routes/app.pagamentos'
+import { Route as AppJogosRouteImport } from './routes/app.jogos'
+import { Route as AppCamposRouteImport } from './routes/app.campos'
+import { Route as AdminJogosRouteImport } from './routes/admin.jogos'
+import { Route as AdminJogadoresRouteImport } from './routes/admin.jogadores'
+import { Route as AdminCodigosRouteImport } from './routes/admin.codigos'
+import { Route as AdminCamposRouteImport } from './routes/admin.campos'
+import { Route as AppJogosIdRouteImport } from './routes/app.jogos.$id'
+import { Route as AdminJogosIdRouteImport } from './routes/admin.jogos.$id'
 
 const SuspendedRoute = SuspendedRouteImport.update({
   id: '/suspended',
@@ -23,38 +37,200 @@ const OnboardingRoute = OnboardingRouteImport.update({
   path: '/onboarding',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AppRoute = AppRouteImport.update({
+  id: '/app',
+  path: '/app',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminRoute = AdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AppIndexRoute = AppIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppRoute,
+} as any)
+const AdminIndexRoute = AdminIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AppPerfilRoute = AppPerfilRouteImport.update({
+  id: '/perfil',
+  path: '/perfil',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppPagamentosRoute = AppPagamentosRouteImport.update({
+  id: '/pagamentos',
+  path: '/pagamentos',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppJogosRoute = AppJogosRouteImport.update({
+  id: '/jogos',
+  path: '/jogos',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppCamposRoute = AppCamposRouteImport.update({
+  id: '/campos',
+  path: '/campos',
+  getParentRoute: () => AppRoute,
+} as any)
+const AdminJogosRoute = AdminJogosRouteImport.update({
+  id: '/jogos',
+  path: '/jogos',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminJogadoresRoute = AdminJogadoresRouteImport.update({
+  id: '/jogadores',
+  path: '/jogadores',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminCodigosRoute = AdminCodigosRouteImport.update({
+  id: '/codigos',
+  path: '/codigos',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminCamposRoute = AdminCamposRouteImport.update({
+  id: '/campos',
+  path: '/campos',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AppJogosIdRoute = AppJogosIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => AppJogosRoute,
+} as any)
+const AdminJogosIdRoute = AdminJogosIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => AdminJogosRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/admin': typeof AdminRouteWithChildren
+  '/app': typeof AppRouteWithChildren
   '/onboarding': typeof OnboardingRoute
   '/suspended': typeof SuspendedRoute
+  '/admin/campos': typeof AdminCamposRoute
+  '/admin/codigos': typeof AdminCodigosRoute
+  '/admin/jogadores': typeof AdminJogadoresRoute
+  '/admin/jogos': typeof AdminJogosRouteWithChildren
+  '/app/campos': typeof AppCamposRoute
+  '/app/jogos': typeof AppJogosRouteWithChildren
+  '/app/pagamentos': typeof AppPagamentosRoute
+  '/app/perfil': typeof AppPerfilRoute
+  '/admin/': typeof AdminIndexRoute
+  '/app/': typeof AppIndexRoute
+  '/admin/jogos/$id': typeof AdminJogosIdRoute
+  '/app/jogos/$id': typeof AppJogosIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/onboarding': typeof OnboardingRoute
   '/suspended': typeof SuspendedRoute
+  '/admin/campos': typeof AdminCamposRoute
+  '/admin/codigos': typeof AdminCodigosRoute
+  '/admin/jogadores': typeof AdminJogadoresRoute
+  '/admin/jogos': typeof AdminJogosRouteWithChildren
+  '/app/campos': typeof AppCamposRoute
+  '/app/jogos': typeof AppJogosRouteWithChildren
+  '/app/pagamentos': typeof AppPagamentosRoute
+  '/app/perfil': typeof AppPerfilRoute
+  '/admin': typeof AdminIndexRoute
+  '/app': typeof AppIndexRoute
+  '/admin/jogos/$id': typeof AdminJogosIdRoute
+  '/app/jogos/$id': typeof AppJogosIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/admin': typeof AdminRouteWithChildren
+  '/app': typeof AppRouteWithChildren
   '/onboarding': typeof OnboardingRoute
   '/suspended': typeof SuspendedRoute
+  '/admin/campos': typeof AdminCamposRoute
+  '/admin/codigos': typeof AdminCodigosRoute
+  '/admin/jogadores': typeof AdminJogadoresRoute
+  '/admin/jogos': typeof AdminJogosRouteWithChildren
+  '/app/campos': typeof AppCamposRoute
+  '/app/jogos': typeof AppJogosRouteWithChildren
+  '/app/pagamentos': typeof AppPagamentosRoute
+  '/app/perfil': typeof AppPerfilRoute
+  '/admin/': typeof AdminIndexRoute
+  '/app/': typeof AppIndexRoute
+  '/admin/jogos/$id': typeof AdminJogosIdRoute
+  '/app/jogos/$id': typeof AppJogosIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/onboarding' | '/suspended'
+  fullPaths:
+    | '/'
+    | '/admin'
+    | '/app'
+    | '/onboarding'
+    | '/suspended'
+    | '/admin/campos'
+    | '/admin/codigos'
+    | '/admin/jogadores'
+    | '/admin/jogos'
+    | '/app/campos'
+    | '/app/jogos'
+    | '/app/pagamentos'
+    | '/app/perfil'
+    | '/admin/'
+    | '/app/'
+    | '/admin/jogos/$id'
+    | '/app/jogos/$id'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/onboarding' | '/suspended'
-  id: '__root__' | '/' | '/onboarding' | '/suspended'
+  to:
+    | '/'
+    | '/onboarding'
+    | '/suspended'
+    | '/admin/campos'
+    | '/admin/codigos'
+    | '/admin/jogadores'
+    | '/admin/jogos'
+    | '/app/campos'
+    | '/app/jogos'
+    | '/app/pagamentos'
+    | '/app/perfil'
+    | '/admin'
+    | '/app'
+    | '/admin/jogos/$id'
+    | '/app/jogos/$id'
+  id:
+    | '__root__'
+    | '/'
+    | '/admin'
+    | '/app'
+    | '/onboarding'
+    | '/suspended'
+    | '/admin/campos'
+    | '/admin/codigos'
+    | '/admin/jogadores'
+    | '/admin/jogos'
+    | '/app/campos'
+    | '/app/jogos'
+    | '/app/pagamentos'
+    | '/app/perfil'
+    | '/admin/'
+    | '/app/'
+    | '/admin/jogos/$id'
+    | '/app/jogos/$id'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AdminRoute: typeof AdminRouteWithChildren
+  AppRoute: typeof AppRouteWithChildren
   OnboardingRoute: typeof OnboardingRoute
   SuspendedRoute: typeof SuspendedRoute
 }
@@ -75,6 +251,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OnboardingRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/app': {
+      id: '/app'
+      path: '/app'
+      fullPath: '/app'
+      preLoaderRoute: typeof AppRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin': {
+      id: '/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AdminRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -82,11 +272,157 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/app/': {
+      id: '/app/'
+      path: '/'
+      fullPath: '/app/'
+      preLoaderRoute: typeof AppIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/admin/': {
+      id: '/admin/'
+      path: '/'
+      fullPath: '/admin/'
+      preLoaderRoute: typeof AdminIndexRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/app/perfil': {
+      id: '/app/perfil'
+      path: '/perfil'
+      fullPath: '/app/perfil'
+      preLoaderRoute: typeof AppPerfilRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/pagamentos': {
+      id: '/app/pagamentos'
+      path: '/pagamentos'
+      fullPath: '/app/pagamentos'
+      preLoaderRoute: typeof AppPagamentosRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/jogos': {
+      id: '/app/jogos'
+      path: '/jogos'
+      fullPath: '/app/jogos'
+      preLoaderRoute: typeof AppJogosRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/campos': {
+      id: '/app/campos'
+      path: '/campos'
+      fullPath: '/app/campos'
+      preLoaderRoute: typeof AppCamposRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/admin/jogos': {
+      id: '/admin/jogos'
+      path: '/jogos'
+      fullPath: '/admin/jogos'
+      preLoaderRoute: typeof AdminJogosRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/jogadores': {
+      id: '/admin/jogadores'
+      path: '/jogadores'
+      fullPath: '/admin/jogadores'
+      preLoaderRoute: typeof AdminJogadoresRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/codigos': {
+      id: '/admin/codigos'
+      path: '/codigos'
+      fullPath: '/admin/codigos'
+      preLoaderRoute: typeof AdminCodigosRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/campos': {
+      id: '/admin/campos'
+      path: '/campos'
+      fullPath: '/admin/campos'
+      preLoaderRoute: typeof AdminCamposRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/app/jogos/$id': {
+      id: '/app/jogos/$id'
+      path: '/$id'
+      fullPath: '/app/jogos/$id'
+      preLoaderRoute: typeof AppJogosIdRouteImport
+      parentRoute: typeof AppJogosRoute
+    }
+    '/admin/jogos/$id': {
+      id: '/admin/jogos/$id'
+      path: '/$id'
+      fullPath: '/admin/jogos/$id'
+      preLoaderRoute: typeof AdminJogosIdRouteImport
+      parentRoute: typeof AdminJogosRoute
+    }
   }
 }
 
+interface AdminJogosRouteChildren {
+  AdminJogosIdRoute: typeof AdminJogosIdRoute
+}
+
+const AdminJogosRouteChildren: AdminJogosRouteChildren = {
+  AdminJogosIdRoute: AdminJogosIdRoute,
+}
+
+const AdminJogosRouteWithChildren = AdminJogosRoute._addFileChildren(
+  AdminJogosRouteChildren,
+)
+
+interface AdminRouteChildren {
+  AdminCamposRoute: typeof AdminCamposRoute
+  AdminCodigosRoute: typeof AdminCodigosRoute
+  AdminJogadoresRoute: typeof AdminJogadoresRoute
+  AdminJogosRoute: typeof AdminJogosRouteWithChildren
+  AdminIndexRoute: typeof AdminIndexRoute
+}
+
+const AdminRouteChildren: AdminRouteChildren = {
+  AdminCamposRoute: AdminCamposRoute,
+  AdminCodigosRoute: AdminCodigosRoute,
+  AdminJogadoresRoute: AdminJogadoresRoute,
+  AdminJogosRoute: AdminJogosRouteWithChildren,
+  AdminIndexRoute: AdminIndexRoute,
+}
+
+const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
+
+interface AppJogosRouteChildren {
+  AppJogosIdRoute: typeof AppJogosIdRoute
+}
+
+const AppJogosRouteChildren: AppJogosRouteChildren = {
+  AppJogosIdRoute: AppJogosIdRoute,
+}
+
+const AppJogosRouteWithChildren = AppJogosRoute._addFileChildren(
+  AppJogosRouteChildren,
+)
+
+interface AppRouteChildren {
+  AppCamposRoute: typeof AppCamposRoute
+  AppJogosRoute: typeof AppJogosRouteWithChildren
+  AppPagamentosRoute: typeof AppPagamentosRoute
+  AppPerfilRoute: typeof AppPerfilRoute
+  AppIndexRoute: typeof AppIndexRoute
+}
+
+const AppRouteChildren: AppRouteChildren = {
+  AppCamposRoute: AppCamposRoute,
+  AppJogosRoute: AppJogosRouteWithChildren,
+  AppPagamentosRoute: AppPagamentosRoute,
+  AppPerfilRoute: AppPerfilRoute,
+  AppIndexRoute: AppIndexRoute,
+}
+
+const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AdminRoute: AdminRouteWithChildren,
+  AppRoute: AppRouteWithChildren,
   OnboardingRoute: OnboardingRoute,
   SuspendedRoute: SuspendedRoute,
 }
