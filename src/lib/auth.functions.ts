@@ -25,7 +25,6 @@ export const validateInviteCode = createServerFn({ method: "POST" })
     if (invite.status === "revoked") return { ok: false as const, reason: "Código revogado" };
 
     if (invite.status === "used" && invite.used_by) {
-      // existing user — issue a new device session
       const token = randomToken();
       await supabaseAdmin
         .from("player_sessions")
@@ -33,7 +32,6 @@ export const validateInviteCode = createServerFn({ method: "POST" })
       return { ok: true as const, kind: "existing" as const, token, inviteId: invite.id };
     }
 
-    // pending — needs profile creation
     return { ok: true as const, kind: "new" as const, inviteId: invite.id, isAdmin: invite.is_admin };
   });
 
@@ -42,13 +40,17 @@ export const createProfile = createServerFn({ method: "POST" })
   .inputValidator((d: {
     inviteId: string;
     name: string;
-    position: "goleiro" | "defensor" | "meio" | "atacante";
+    position: string;
+    jersey_number?: number | null;
+    preferred_foot?: string;
     avatar_url?: string | null;
   }) =>
     z.object({
       inviteId: z.string().uuid(),
       name: z.string().min(1).max(80),
-      position: z.enum(["goleiro", "defensor", "meio", "atacante"]),
+      position: z.string().min(1),
+      jersey_number: z.number().min(1).max(99).nullable().optional(),
+      preferred_foot: z.enum(["right", "left", "both"]).optional(),
       avatar_url: z.string().url().nullable().optional(),
     }).parse(d),
   )
@@ -66,11 +68,13 @@ export const createProfile = createServerFn({ method: "POST" })
       .from("players")
       .insert({
         name: data.name.trim(),
-        position: data.position,
+        position: data.position as any,
+        jersey_number: data.jersey_number ?? null,
+        preferred_foot: data.preferred_foot ?? "right",
         avatar_url: data.avatar_url ?? null,
         invite_code_id: invite.id,
         is_admin: invite.is_admin,
-      })
+      } as any)
       .select("id")
       .single();
 
@@ -104,12 +108,16 @@ export const logout = createServerFn({ method: "POST" }).handler(async () => {
 export const updateMyProfile = createServerFn({ method: "POST" })
   .inputValidator((d: {
     name: string;
-    position: "goleiro" | "defensor" | "meio" | "atacante";
+    position: string;
+    jersey_number?: number | null;
+    preferred_foot?: string;
     avatar_url?: string | null;
   }) =>
     z.object({
       name: z.string().min(1).max(80),
-      position: z.enum(["goleiro", "defensor", "meio", "atacante"]),
+      position: z.string().min(1),
+      jersey_number: z.number().min(1).max(99).nullable().optional(),
+      preferred_foot: z.enum(["right", "left", "both"]).optional(),
       avatar_url: z.string().url().nullable().optional(),
     }).parse(d),
   )
@@ -119,10 +127,53 @@ export const updateMyProfile = createServerFn({ method: "POST" })
       .from("players")
       .update({
         name: data.name.trim(),
-        position: data.position,
+        position: data.position as any,
+        jersey_number: data.jersey_number ?? null,
+        preferred_foot: data.preferred_foot ?? "right",
         avatar_url: data.avatar_url ?? null,
-      })
+      } as any)
       .eq("id", me.id);
     if (error) throw new Error(error.message);
     return { ok: true };
+  });
+
+// Upload de avatar via server (mais confiável que client-side)
+export const uploadAvatar = createServerFn({ method: "POST" })
+  .inputValidator((d: {
+    fileBase64: string;
+    fileName: string;
+    contentType: string;
+  }) =>
+    z.object({
+      fileBase64: z.string().min(1),
+      fileName: z.string().min(1),
+      contentType: z.string().min(1),
+    }).parse(d),
+  )
+  .handler(async ({ data }) => {
+    const base64Data = data.fileBase64.replace(/^data:image\/\w+;base64,/, "");
+    const buffer = Buffer.from(base64Data, "base64");
+
+    const ext = data.fileName.split(".").pop()?.toLowerCase() || "jpg";
+    const timestamp = Date.now();
+    const randomStr = Math.random().toString(36).substring(2, 8);
+    const path = `players/${timestamp}-${randomStr}.${ext}`;
+
+    const { error: uploadError } = await supabaseAdmin.storage
+      .from("avatars")
+      .upload(path, buffer, {
+        contentType: data.contentType,
+        upsert: true,
+      });
+
+    if (uploadError) {
+      console.error("[uploadAvatar] Erro:", uploadError);
+      throw new Error(`Falha no upload: ${uploadError.message}`);
+    }
+
+    const { data: urlData } = supabaseAdmin.storage
+      .from("avatars")
+      .getPublicUrl(path);
+
+    return { url: urlData.publicUrl, path };
   });

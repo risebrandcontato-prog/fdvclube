@@ -1,6 +1,7 @@
 // Server-only helpers that resolve the current player from the X-FDV-Token header.
 import { getRequestHeader } from "@tanstack/react-start/server";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { resolveAdminSession } from "./admin.session";
 
 export type SessionPlayer = {
   id: string;
@@ -47,8 +48,30 @@ export async function requirePlayer(): Promise<SessionPlayer> {
   return p;
 }
 
+// ─────────────────────────────────────────────
+// Admin access: accepts BOTH player-admin AND standalone admin
+// ─────────────────────────────────────────────
 export async function requireAdmin(): Promise<SessionPlayer> {
   const p = await requirePlayer();
   if (!p.is_admin) throw new Error("FORBIDDEN");
   return p;
+}
+
+export async function requireAdminAccess(): Promise<
+  | { type: "player"; player: SessionPlayer }
+  | { type: "system"; adminSession: import("./admin.session").AdminSession }
+> {
+  // Try player session first (player who is also admin)
+  const player = await resolveSessionPlayer();
+  if (player && player.is_admin && !player.is_blocked) {
+    return { type: "player", player };
+  }
+
+  // Try standalone admin session (pure admin login)
+  const adminSession = await resolveAdminSession();
+  if (adminSession) {
+    return { type: "system", adminSession };
+  }
+
+  throw new Error("UNAUTHENTICATED");
 }

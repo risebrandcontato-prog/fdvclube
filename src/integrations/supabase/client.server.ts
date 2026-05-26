@@ -2,19 +2,78 @@
 // Server-side Supabase client with service role key - bypasses RLS.
 // Use this for admin operations in server functions and server routes only.
 // For user-authenticated queries (with RLS), use the auth middleware instead.
-import { createClient } from '@supabase/supabase-js';
-import type { Database } from './types';
 
+import { readFileSync } from "fs";
+import { resolve } from "path";
+import { createClient } from "@supabase/supabase-js";
+import type { Database } from "./types";
+
+// ─────────────────────────────────────────────
+// Carrega .env manualmente (compatível com TanStack Start)
+// ─────────────────────────────────────────────
+function loadEnv() {
+  try {
+    const envPath = resolve(process.cwd(), ".env");
+    const envContent = readFileSync(envPath, "utf-8");
+    envContent.split("\n").forEach((line) => {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) return;
+      const eqIndex = trimmed.indexOf("=");
+      if (eqIndex === -1) return;
+      const key = trimmed.slice(0, eqIndex).trim();
+      let value = trimmed.slice(eqIndex + 1).trim();
+      // Remove aspas envolventes
+      value = value.replace(/^["'](.*)["']$/, "$1");
+      if (key && !process.env[key]) {
+        process.env[key] = value;
+      }
+    });
+  } catch {
+    // .env não encontrado — process.env já deve ter as vars
+  }
+}
+
+loadEnv();
+
+// ─────────────────────────────────────────────
+// Cliente Supabase Admin
+// ─────────────────────────────────────────────
 function createSupabaseAdminClient() {
-  const SUPABASE_URL = process.env.SUPABASE_URL;
-  const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const SUPABASE_URL =
+    process.env.SUPABASE_URL ||
+    process.env.VITE_SUPABASE_URL;
+
+  const SUPABASE_SERVICE_ROLE_KEY =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
+
+  // DEBUG: Log das variáveis carregadas
+  const keyPayload = SUPABASE_SERVICE_ROLE_KEY
+    ? JSON.parse(
+        Buffer.from(
+          SUPABASE_SERVICE_ROLE_KEY.split(".")[1]
+            .replace(/-/g, "+")
+            .replace(/_/g, "/"),
+          "base64"
+        ).toString()
+      )
+    : null;
+
+  console.log("[DEBUG] SupabaseAdmin Config:", {
+    url: SUPABASE_URL,
+    keyLoaded: !!SUPABASE_SERVICE_ROLE_KEY,
+    keyLength: SUPABASE_SERVICE_ROLE_KEY?.length,
+    keyStart: SUPABASE_SERVICE_ROLE_KEY?.slice(0, 30),
+    keyRole: keyPayload?.role,
+    keyRef: keyPayload?.ref,
+  });
 
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
     const missing = [
-      ...(!SUPABASE_URL ? ['SUPABASE_URL'] : []),
-      ...(!SUPABASE_SERVICE_ROLE_KEY ? ['SUPABASE_SERVICE_ROLE_KEY'] : []),
+      ...(!SUPABASE_URL ? ["SUPABASE_URL"] : []),
+      ...(!SUPABASE_SERVICE_ROLE_KEY ? ["SUPABASE_SERVICE_ROLE_KEY"] : []),
     ];
-    const message = `Missing Supabase environment variable(s): ${missing.join(', ')}. Connect Supabase in Lovable Cloud.`;
+    const message = `Missing Supabase environment variable(s): ${missing.join(", ")}. Connect Supabase in Lovable Cloud.`;
     console.error(`[Supabase] ${message}`);
     throw new Error(message);
   }
@@ -24,7 +83,7 @@ function createSupabaseAdminClient() {
       storage: undefined,
       persistSession: false,
       autoRefreshToken: false,
-    }
+    },
   });
 }
 
@@ -33,9 +92,12 @@ let _supabaseAdmin: ReturnType<typeof createSupabaseAdminClient> | undefined;
 // Server-side Supabase client with service role - bypasses RLS
 // SECURITY: Only use this for trusted server-side operations, never expose to client code
 // Import like: import { supabaseAdmin } from "@/integrations/supabase/client.server";
-export const supabaseAdmin = new Proxy({} as ReturnType<typeof createSupabaseAdminClient>, {
-  get(_, prop, receiver) {
-    if (!_supabaseAdmin) _supabaseAdmin = createSupabaseAdminClient();
-    return Reflect.get(_supabaseAdmin, prop, receiver);
-  },
-});
+export const supabaseAdmin = new Proxy(
+  {} as ReturnType<typeof createSupabaseAdminClient>,
+  {
+    get(_, prop, receiver) {
+      if (!_supabaseAdmin) _supabaseAdmin = createSupabaseAdminClient();
+      return Reflect.get(_supabaseAdmin, prop, receiver);
+    },
+  }
+);

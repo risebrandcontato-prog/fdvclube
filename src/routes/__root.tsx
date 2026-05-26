@@ -11,6 +11,7 @@ import {
 import appCss from "../styles.css?url";
 import { SessionProvider } from "@/hooks/use-session";
 import { Toaster } from "@/components/ui/sonner";
+import { usePWA } from "@/hooks/use-pwa";
 
 function NotFoundComponent() {
   return (
@@ -71,11 +72,15 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
   head: () => ({
     meta: [
       { charSet: "utf-8" },
-      { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" },
+      { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, maximum-scale=1" },
       { name: "theme-color", content: "#22c55e" },
+      { name: "msapplication-TileColor", content: "#22c55e" },
+      { name: "msapplication-TileImage", content: "/icon-192.png" },
       { name: "apple-mobile-web-app-capable", content: "yes" },
       { name: "apple-mobile-web-app-status-bar-style", content: "black-translucent" },
       { name: "apple-mobile-web-app-title", content: "FDV" },
+      { name: "mobile-web-app-capable", content: "yes" },
+      { name: "application-name", content: "FDV" },
       { title: "FDV — Futebol de Amigos" },
       { name: "description", content: "App do time de futebol amador FDV: confirmação de presença, pagamentos e campos." },
       { property: "og:title", content: "FDV — Futebol de Amigos" },
@@ -89,7 +94,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     ],
     links: [
       { rel: "stylesheet", href: appCss },
-      { rel: "manifest", href: "/manifest.json" },
+      { rel: "manifest", href: "/manifest.webmanifest" },
       { rel: "apple-touch-icon", href: "/icon-192.png" },
       { rel: "icon", href: "/icon-192.png", type: "image/png" },
     ],
@@ -116,6 +121,7 @@ function RootShell({ children }: { children: React.ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+  usePWA(); // ← Registra o Service Worker e gerencia updates
 
   return (
     <QueryClientProvider client={queryClient}>

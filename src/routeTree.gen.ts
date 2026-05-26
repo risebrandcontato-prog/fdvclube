@@ -20,10 +20,12 @@ import { Route as AppPerfilRouteImport } from './routes/app.perfil'
 import { Route as AppPagamentosRouteImport } from './routes/app.pagamentos'
 import { Route as AppJogosRouteImport } from './routes/app.jogos'
 import { Route as AppCamposRouteImport } from './routes/app.campos'
+import { Route as AdminLoginRouteImport } from './routes/admin.login'
 import { Route as AdminJogosRouteImport } from './routes/admin.jogos'
 import { Route as AdminJogadoresRouteImport } from './routes/admin.jogadores'
 import { Route as AdminCodigosRouteImport } from './routes/admin.codigos'
 import { Route as AdminCamposRouteImport } from './routes/admin.campos'
+import { Route as AppJogosIndexRouteImport } from './routes/app.jogos.index'
 import { Route as AppJogosIdRouteImport } from './routes/app.jogos.$id'
 import { Route as AdminJogosIdRouteImport } from './routes/admin.jogos.$id'
 
@@ -82,6 +84,11 @@ const AppCamposRoute = AppCamposRouteImport.update({
   path: '/campos',
   getParentRoute: () => AppRoute,
 } as any)
+const AdminLoginRoute = AdminLoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminJogosRoute = AdminJogosRouteImport.update({
   id: '/jogos',
   path: '/jogos',
@@ -101,6 +108,11 @@ const AdminCamposRoute = AdminCamposRouteImport.update({
   id: '/campos',
   path: '/campos',
   getParentRoute: () => AdminRoute,
+} as any)
+const AppJogosIndexRoute = AppJogosIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppJogosRoute,
 } as any)
 const AppJogosIdRoute = AppJogosIdRouteImport.update({
   id: '/$id',
@@ -123,6 +135,7 @@ export interface FileRoutesByFullPath {
   '/admin/codigos': typeof AdminCodigosRoute
   '/admin/jogadores': typeof AdminJogadoresRoute
   '/admin/jogos': typeof AdminJogosRouteWithChildren
+  '/admin/login': typeof AdminLoginRoute
   '/app/campos': typeof AppCamposRoute
   '/app/jogos': typeof AppJogosRouteWithChildren
   '/app/pagamentos': typeof AppPagamentosRoute
@@ -131,6 +144,7 @@ export interface FileRoutesByFullPath {
   '/app/': typeof AppIndexRoute
   '/admin/jogos/$id': typeof AdminJogosIdRoute
   '/app/jogos/$id': typeof AppJogosIdRoute
+  '/app/jogos/': typeof AppJogosIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -140,14 +154,15 @@ export interface FileRoutesByTo {
   '/admin/codigos': typeof AdminCodigosRoute
   '/admin/jogadores': typeof AdminJogadoresRoute
   '/admin/jogos': typeof AdminJogosRouteWithChildren
+  '/admin/login': typeof AdminLoginRoute
   '/app/campos': typeof AppCamposRoute
-  '/app/jogos': typeof AppJogosRouteWithChildren
   '/app/pagamentos': typeof AppPagamentosRoute
   '/app/perfil': typeof AppPerfilRoute
   '/admin': typeof AdminIndexRoute
   '/app': typeof AppIndexRoute
   '/admin/jogos/$id': typeof AdminJogosIdRoute
   '/app/jogos/$id': typeof AppJogosIdRoute
+  '/app/jogos': typeof AppJogosIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -160,6 +175,7 @@ export interface FileRoutesById {
   '/admin/codigos': typeof AdminCodigosRoute
   '/admin/jogadores': typeof AdminJogadoresRoute
   '/admin/jogos': typeof AdminJogosRouteWithChildren
+  '/admin/login': typeof AdminLoginRoute
   '/app/campos': typeof AppCamposRoute
   '/app/jogos': typeof AppJogosRouteWithChildren
   '/app/pagamentos': typeof AppPagamentosRoute
@@ -168,6 +184,7 @@ export interface FileRoutesById {
   '/app/': typeof AppIndexRoute
   '/admin/jogos/$id': typeof AdminJogosIdRoute
   '/app/jogos/$id': typeof AppJogosIdRoute
+  '/app/jogos/': typeof AppJogosIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -181,6 +198,7 @@ export interface FileRouteTypes {
     | '/admin/codigos'
     | '/admin/jogadores'
     | '/admin/jogos'
+    | '/admin/login'
     | '/app/campos'
     | '/app/jogos'
     | '/app/pagamentos'
@@ -189,6 +207,7 @@ export interface FileRouteTypes {
     | '/app/'
     | '/admin/jogos/$id'
     | '/app/jogos/$id'
+    | '/app/jogos/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -198,14 +217,15 @@ export interface FileRouteTypes {
     | '/admin/codigos'
     | '/admin/jogadores'
     | '/admin/jogos'
+    | '/admin/login'
     | '/app/campos'
-    | '/app/jogos'
     | '/app/pagamentos'
     | '/app/perfil'
     | '/admin'
     | '/app'
     | '/admin/jogos/$id'
     | '/app/jogos/$id'
+    | '/app/jogos'
   id:
     | '__root__'
     | '/'
@@ -217,6 +237,7 @@ export interface FileRouteTypes {
     | '/admin/codigos'
     | '/admin/jogadores'
     | '/admin/jogos'
+    | '/admin/login'
     | '/app/campos'
     | '/app/jogos'
     | '/app/pagamentos'
@@ -225,6 +246,7 @@ export interface FileRouteTypes {
     | '/app/'
     | '/admin/jogos/$id'
     | '/app/jogos/$id'
+    | '/app/jogos/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -314,6 +336,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppCamposRouteImport
       parentRoute: typeof AppRoute
     }
+    '/admin/login': {
+      id: '/admin/login'
+      path: '/login'
+      fullPath: '/admin/login'
+      preLoaderRoute: typeof AdminLoginRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/jogos': {
       id: '/admin/jogos'
       path: '/jogos'
@@ -341,6 +370,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/admin/campos'
       preLoaderRoute: typeof AdminCamposRouteImport
       parentRoute: typeof AdminRoute
+    }
+    '/app/jogos/': {
+      id: '/app/jogos/'
+      path: '/'
+      fullPath: '/app/jogos/'
+      preLoaderRoute: typeof AppJogosIndexRouteImport
+      parentRoute: typeof AppJogosRoute
     }
     '/app/jogos/$id': {
       id: '/app/jogos/$id'
@@ -376,6 +412,7 @@ interface AdminRouteChildren {
   AdminCodigosRoute: typeof AdminCodigosRoute
   AdminJogadoresRoute: typeof AdminJogadoresRoute
   AdminJogosRoute: typeof AdminJogosRouteWithChildren
+  AdminLoginRoute: typeof AdminLoginRoute
   AdminIndexRoute: typeof AdminIndexRoute
 }
 
@@ -384,6 +421,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminCodigosRoute: AdminCodigosRoute,
   AdminJogadoresRoute: AdminJogadoresRoute,
   AdminJogosRoute: AdminJogosRouteWithChildren,
+  AdminLoginRoute: AdminLoginRoute,
   AdminIndexRoute: AdminIndexRoute,
 }
 
@@ -391,10 +429,12 @@ const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
 
 interface AppJogosRouteChildren {
   AppJogosIdRoute: typeof AppJogosIdRoute
+  AppJogosIndexRoute: typeof AppJogosIndexRoute
 }
 
 const AppJogosRouteChildren: AppJogosRouteChildren = {
   AppJogosIdRoute: AppJogosIdRoute,
+  AppJogosIndexRoute: AppJogosIndexRoute,
 }
 
 const AppJogosRouteWithChildren = AppJogosRoute._addFileChildren(
@@ -429,3 +469,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
