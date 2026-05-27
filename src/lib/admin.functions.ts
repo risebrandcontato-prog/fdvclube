@@ -88,23 +88,35 @@ export const adminListLocations = createServerFn({ method: "GET" }).handler(asyn
   return data ?? [];
 });
 
+// Schema base para campos (reutilizado)
+const locationSchema = z.object({
+  name: z.string().min(1).max(120),
+  address: z.string().max(255).optional(),
+  maps_url: z.string().url().optional().or(z.literal("")),
+  photo_url: z.string().url().optional().or(z.literal("")),
+  phone: z.string().max(20).optional(),
+  price_per_hour: z.number().min(0).optional(),
+  opening_hours: z.string().max(100).optional(),
+  rating: z.number().min(0).max(5).optional(),
+  notes: z.string().max(500).optional(),
+});
+
 export const adminCreateLocation = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) =>
-    z.object({
-      name: z.string().min(1).max(120),
-      address: z.string().max(255).optional().or(z.literal("")),
-      maps_url: z.string().url().optional().or(z.literal("")),
-      photo_url: z.string().url().optional().or(z.literal("")),
-      phone: z.string().max(20).optional().or(z.literal("")),
-      price_per_hour: z.number().min(0).optional(),
-      opening_hours: z.string().max(100).optional().or(z.literal("")),
-      rating: z.number().min(0).max(5).optional(),
-      notes: z.string().max(500).optional().or(z.literal("")),
-    }).parse(d),
-  )
+  .inputValidator((d: unknown) => locationSchema.parse(d))
   .handler(async ({ data }) => {
     await requireAdminAccess();
-    const { error } = await supabaseAdmin.from("locations").insert(data);
+    // Remove campos undefined/vazios antes de inserir
+    const cleanData: Record<string, any> = { name: data.name };
+    if (data.address) cleanData.address = data.address;
+    if (data.maps_url && data.maps_url !== "") cleanData.maps_url = data.maps_url;
+    if (data.photo_url && data.photo_url !== "") cleanData.photo_url = data.photo_url;
+    if (data.phone) cleanData.phone = data.phone;
+    if (data.price_per_hour != null) cleanData.price_per_hour = data.price_per_hour;
+    if (data.opening_hours) cleanData.opening_hours = data.opening_hours;
+    if (data.rating != null) cleanData.rating = data.rating;
+    if (data.notes) cleanData.notes = data.notes;
+
+    const { error } = await supabaseAdmin.from("locations").insert(cleanData);
     if (error) throw new Error(error.message);
     return { ok: true };
   });
@@ -114,14 +126,14 @@ export const adminUpdateLocation = createServerFn({ method: "POST" })
     z.object({
       id: z.string().uuid(),
       name: z.string().min(1).max(120).optional(),
-      address: z.string().max(255).optional().or(z.literal("")),
+      address: z.string().max(255).optional(),
       maps_url: z.string().url().optional().or(z.literal("")),
       photo_url: z.string().url().optional().or(z.literal("")),
-      phone: z.string().max(20).optional().or(z.literal("")),
+      phone: z.string().max(20).optional(),
       price_per_hour: z.number().min(0).optional(),
-      opening_hours: z.string().max(100).optional().or(z.literal("")),
+      opening_hours: z.string().max(100).optional(),
       rating: z.number().min(0).max(5).optional(),
-      notes: z.string().max(500).optional().or(z.literal("")),
+      notes: z.string().max(500).optional(),
     }).parse(d),
   )
   .handler(async ({ data }) => {
@@ -201,7 +213,7 @@ export const adminCreateGame = createServerFn({ method: "POST" })
       location_id: z.string().uuid().nullable().optional(),
       max_players: z.number().int().min(1).max(50),
       contribution_amount: z.number().min(0).max(10000),
-      notes: z.string().max(500).optional().or(z.literal("")),
+      notes: z.string().max(500).optional(),
       has_ball: z.boolean().optional(),
       vests: z.enum(["none", "orange", "black", "both"]).optional(),
     }).parse(d),
@@ -241,7 +253,7 @@ export const adminUpdateGame = createServerFn({ method: "POST" })
       time: z.string().min(5).max(8).optional(),
       location_id: z.string().uuid().nullable().optional(),
       max_players: z.number().int().min(1).max(50).optional(),
-      notes: z.string().max(500).optional().or(z.literal("")),
+      notes: z.string().max(500).optional(),
       status: z.enum(["scheduled", "cancelled", "done"]).optional(),
       has_ball: z.boolean().optional(),
       vests: z.enum(["none", "orange", "black", "both"]).optional(),
@@ -330,7 +342,7 @@ export const adminSetPayment = createServerFn({ method: "POST" })
       playerId: z.string().uuid(),
       status: z.enum(["paid", "pending", "late", "exempt"]),
       amount: z.number().min(0).max(10000).optional(),
-      notes: z.string().max(255).optional().or(z.literal("")),
+      notes: z.string().max(255).optional(),
     }).parse(d),
   )
   .handler(async ({ data }) => {

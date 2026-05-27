@@ -132,11 +132,7 @@ function CamposAdminPage() {
       const base64 = reader.result as string;
       try {
         setIsSubmitting(true);
-        const res = await uploadFn({
-          fileBase64: base64,
-          fileName: file.name,
-          contentType: file.type,
-        });
+        const res = await uploadFn({ data: { fileBase64: base64, fileName: file.name, contentType: file.type } });
         setForm((prev) => ({ ...prev, photo_url: res.url }));
         setPreviewUrl(res.url);
       } catch (err: any) {
@@ -167,9 +163,9 @@ function CamposAdminPage() {
       };
 
       if (editingId) {
-        await updateFn({ id: editingId, ...payload });
+        await updateFn({ data: { id: editingId, ...payload } });
       } else {
-        await createFn(payload);
+        await createFn({ data: payload });
       }
 
       await queryClient.invalidateQueries({ queryKey: ["admin-locations"] });
@@ -185,7 +181,7 @@ function CamposAdminPage() {
   const handleDelete = async (id: string) => {
     setDeletingId(id);
     try {
-      await deleteFn({ id });
+      await deleteFn({ data: { id } });
       await queryClient.invalidateQueries({ queryKey: ["admin-locations"] });
     } catch (err: any) {
       alert(err.message ?? "Erro ao excluir");
@@ -244,7 +240,7 @@ function CamposAdminPage() {
                   loading="lazy"
                 />
               ) : (
-                <div className="h-32 bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center">
+                <div className="h-32 bg-linear-to-br from-primary/20 to-primary/5 flex items-center justify-center">
                   <MapPin className="h-8 w-8 text-primary/40" />
                 </div>
               )}
@@ -254,7 +250,7 @@ function CamposAdminPage() {
                     <div className="font-semibold text-lg">{loc.name}</div>
                     {loc.address && (
                       <div className="text-sm text-muted-foreground flex items-start gap-1 mt-0.5">
-                        <MapPin className="h-4 w-4 text-primary flex-shrink-0 mt-0.5" />
+                        <MapPin className="h-4 w-4 text-primary shrink-0 mt-0.5" />
                         <span>{loc.address}</span>
                       </div>
                     )}
