@@ -138,7 +138,7 @@ function PerfilPage() {
             {form.name || player?.name}
             {player?.is_admin ? <Shield className="h-4 w-4 text-primary" /> : null}
           </div>
-          <div className="mt-1"><PositionBadge position={form.preferred_position || player?.position ?? ""} /></div>
+          <div className="mt-1"><PositionBadge position={(form.preferred_position || player?.position) ?? ""} /></div>
           {uploading ? <p className="text-xs text-muted-foreground mt-1">Enviando foto...</p> : null}
         </div>
       </Card>
