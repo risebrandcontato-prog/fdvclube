@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { FdvLogo } from "@/components/FdvLogo";
 import { useSession } from "@/hooks/use-session";
 import { validateInviteCode } from "@/lib/auth.functions";
-import { Download, Share, PlusSquare } from "lucide-react";
+import { Download, Share } from "lucide-react";
 
 export const Route = createFileRoute("/")({
   component: EntryPage,
@@ -102,9 +102,6 @@ function EntryPage() {
     }
   }
 
-  // ── Não mostra nada se já estiver instalado ──
-  if (isInstalled) return null;
-
   return (
     <main className="relative min-h-dvh bg-gradient-field flex flex-col items-center justify-center px-6 safe-top safe-bottom">
       <div className="absolute inset-0 opacity-20 bg-[radial-gradient(circle_at_50%_20%,_var(--primary)_0%,_transparent_60%)] pointer-events-none" />
@@ -115,8 +112,8 @@ function EntryPage() {
           <p className="mt-1 text-sm text-muted-foreground">Futebol de Amigos · Acesso por convite</p>
         </div>
 
-        {/* ── Botão de Instalar PWA ── */}
-        {installPrompt && !isIOS && (
+        {/* ── Botão de Instalar PWA (só aparece se NÃO instalado) ── */}
+        {installPrompt && !isInstalled && !isIOS && (
           <div className="w-full">
             <Button
               type="button"
@@ -133,8 +130,8 @@ function EntryPage() {
           </div>
         )}
 
-        {/* ── Instruções para iOS ── */}
-        {isIOS && (
+        {/* ── Instruções para iOS (só aparece se NÃO instalado) ── */}
+        {isIOS && !isInstalled && (
           <div className="w-full bg-card/80 rounded-xl p-3 border border-border/50">
             <p className="text-sm font-medium text-foreground flex items-center gap-1.5">
               <Share className="h-4 w-4 text-primary" />
