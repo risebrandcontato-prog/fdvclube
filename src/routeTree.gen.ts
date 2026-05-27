@@ -26,6 +26,7 @@ import { Route as AdminJogadoresRouteImport } from './routes/admin.jogadores'
 import { Route as AdminCodigosRouteImport } from './routes/admin.codigos'
 import { Route as AdminCamposRouteImport } from './routes/admin.campos'
 import { Route as AppJogosIndexRouteImport } from './routes/app.jogos.index'
+import { Route as AppCamposIdRouteImport } from './routes/app.campos.$id'
 import { Route as AppJogosIdRouteImport } from './routes/app.jogos.$id'
 import { Route as AdminJogosIdRouteImport } from './routes/admin.jogos.$id'
 
@@ -114,6 +115,11 @@ const AppJogosIndexRoute = AppJogosIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AppJogosRoute,
 } as any)
+const AppCamposIdRoute = AppCamposIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => AppCamposRoute,
+} as any)
 const AppJogosIdRoute = AppJogosIdRouteImport.update({
   id: '/$id',
   path: '/$id',
@@ -137,6 +143,7 @@ export interface FileRoutesByFullPath {
   '/admin/jogos': typeof AdminJogosRouteWithChildren
   '/admin/login': typeof AdminLoginRoute
   '/app/campos': typeof AppCamposRoute
+  '/app/campos/$id': typeof AppCamposIdRoute
   '/app/jogos': typeof AppJogosRouteWithChildren
   '/app/pagamentos': typeof AppPagamentosRoute
   '/app/perfil': typeof AppPerfilRoute
@@ -156,6 +163,7 @@ export interface FileRoutesByTo {
   '/admin/jogos': typeof AdminJogosRouteWithChildren
   '/admin/login': typeof AdminLoginRoute
   '/app/campos': typeof AppCamposRoute
+  '/app/campos/$id': typeof AppCamposIdRoute
   '/app/pagamentos': typeof AppPagamentosRoute
   '/app/perfil': typeof AppPerfilRoute
   '/admin': typeof AdminIndexRoute
@@ -177,6 +185,7 @@ export interface FileRoutesById {
   '/admin/jogos': typeof AdminJogosRouteWithChildren
   '/admin/login': typeof AdminLoginRoute
   '/app/campos': typeof AppCamposRoute
+  '/app/campos/$id': typeof AppCamposIdRoute
   '/app/jogos': typeof AppJogosRouteWithChildren
   '/app/pagamentos': typeof AppPagamentosRoute
   '/app/perfil': typeof AppPerfilRoute
@@ -200,6 +209,7 @@ export interface FileRouteTypes {
     | '/admin/jogos'
     | '/admin/login'
     | '/app/campos'
+    | '/app/campos/$id'
     | '/app/jogos'
     | '/app/pagamentos'
     | '/app/perfil'
@@ -219,6 +229,7 @@ export interface FileRouteTypes {
     | '/admin/jogos'
     | '/admin/login'
     | '/app/campos'
+    | '/app/campos/$id'
     | '/app/pagamentos'
     | '/app/perfil'
     | '/admin'
@@ -239,6 +250,7 @@ export interface FileRouteTypes {
     | '/admin/jogos'
     | '/admin/login'
     | '/app/campos'
+    | '/app/campos/$id'
     | '/app/jogos'
     | '/app/pagamentos'
     | '/app/perfil'
@@ -320,6 +332,13 @@ declare module '@tanstack/react-router' {
       path: '/pagamentos'
       fullPath: '/app/pagamentos'
       preLoaderRoute: typeof AppPagamentosRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/campos/$id': {
+      id: '/app/campos/$id'
+      path: '/$id'
+      fullPath: '/app/campos/$id'
+      preLoaderRoute: typeof AppCamposIdRouteImport
       parentRoute: typeof AppRoute
     }
     '/app/jogos': {
@@ -443,6 +462,7 @@ const AppJogosRouteWithChildren = AppJogosRoute._addFileChildren(
 
 interface AppRouteChildren {
   AppCamposRoute: typeof AppCamposRoute
+  AppCamposIdRoute: typeof AppCamposIdRoute
   AppJogosRoute: typeof AppJogosRouteWithChildren
   AppPagamentosRoute: typeof AppPagamentosRoute
   AppPerfilRoute: typeof AppPerfilRoute
@@ -451,6 +471,7 @@ interface AppRouteChildren {
 
 const AppRouteChildren: AppRouteChildren = {
   AppCamposRoute: AppCamposRoute,
+  AppCamposIdRoute: AppCamposIdRoute,
   AppJogosRoute: AppJogosRouteWithChildren,
   AppPagamentosRoute: AppPagamentosRoute,
   AppPerfilRoute: AppPerfilRoute,
