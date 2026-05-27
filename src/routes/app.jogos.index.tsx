@@ -58,6 +58,7 @@ function JogosListPage() {
   });
 
   const today = new Date().toISOString().slice(0, 10);
+  const gamesError = data?.error;
   const games = (data?.games ?? []) as any[];
   const upcoming = games.filter(
     (g: any) => g.date >= today && g.status !== "cancelled"
@@ -89,6 +90,9 @@ function JogosListPage() {
             </span>
           </div>
 
+          {gamesError ? (
+            <p className="text-sm text-destructive">Erro ao carregar jogos: {gamesError}</p>
+          ) : null}
           {isLoading ? (
             <div className="space-y-3">
               <GameCardSkeleton />
@@ -202,6 +206,11 @@ function GameCard({ game, player }: { game: any; player: any }) {
                   {st.label}
                 </span>
               </div>
+              {game.result ? (
+                <div className="mb-2 text-xs font-semibold text-primary">
+                  Placar: {game.result.score_a ?? 0} x {game.result.score_b ?? 0}
+                </div>
+              ) : null}
 
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground mb-3">
                 <span className="inline-flex items-center gap-1">

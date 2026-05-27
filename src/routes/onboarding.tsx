@@ -10,6 +10,7 @@ import { FdvLogo } from "@/components/FdvLogo";
 import { PlayerAvatar } from "@/components/PlayerAvatar";
 import { useSession } from "@/hooks/use-session";
 import { createProfile, uploadAvatar } from "@/lib/auth.functions";
+import { prepareImageForUpload } from "@/lib/image-upload";
 import { cn } from "@/lib/utils";
 import { Camera, Footprints, Hash } from "lucide-react";
 
@@ -72,13 +73,7 @@ function OnboardingPage() {
 
     setUploading(true);
     try {
-      const reader = new FileReader();
-      const base64Promise = new Promise<string>((resolve, reject) => {
-        reader.onloadend = () => resolve(reader.result as string);
-        reader.onerror = reject;
-      });
-      reader.readAsDataURL(file);
-      const base64 = await base64Promise;
+      const base64 = await prepareImageForUpload(file);
 
       const result = await uploadFn({
         data: {

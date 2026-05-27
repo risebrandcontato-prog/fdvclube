@@ -36,6 +36,7 @@ import {
   adminDeleteLocation,
   uploadFieldPhoto,
 } from "@/lib/admin.functions";
+import { prepareImageForUpload } from "@/lib/image-upload";
 
 export const Route = createFileRoute("/admin/campos")({
   component: CamposAdminPage,
@@ -127,21 +128,17 @@ function CamposAdminPage() {
       return;
     }
 
-    const reader = new FileReader();
-    reader.onloadend = async () => {
-      const base64 = reader.result as string;
-      try {
-        setIsSubmitting(true);
-        const res = await uploadFn({ data: { fileBase64: base64, fileName: file.name, contentType: file.type } });
-        setForm((prev) => ({ ...prev, photo_url: res.url }));
-        setPreviewUrl(res.url);
-      } catch (err: any) {
-        alert(err.message ?? "Erro no upload");
-      } finally {
-        setIsSubmitting(false);
-      }
-    };
-    reader.readAsDataURL(file);
+    try {
+      setIsSubmitting(true);
+      const base64 = await prepareImageForUpload(file);
+      const res = await uploadFn({ data: { fileBase64: base64, fileName: file.name, contentType: file.type } });
+      setForm((prev) => ({ ...prev, photo_url: res.url }));
+      setPreviewUrl(res.url);
+    } catch (err: any) {
+      alert(err.message ?? "Erro no upload");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -219,6 +216,7 @@ function CamposAdminPage() {
           <Plus className="h-4 w-4 mr-1" /> Novo campo
         </Button>
       </div>
+      {locations?.error ? <p className="text-sm text-destructive">{locations.error}</p> : null}
 
       {isLoading ? (
         <div className="space-y-3">
@@ -226,11 +224,11 @@ function CamposAdminPage() {
             <Card key={i} className="h-40 animate-pulse bg-muted" />
           ))}
         </div>
-      ) : (locations ?? []).length === 0 ? (
+      ) : (locations?.data ?? []).length === 0 ? (
         <p className="text-sm text-muted-foreground">Nenhum campo cadastrado.</p>
       ) : (
         <div className="space-y-3">
-          {(locations ?? []).map((loc: any) => (
+          {(locations?.data ?? []).map((loc: any) => (
             <Card key={loc.id} className="overflow-hidden">
               {loc.photo_url ? (
                 <img

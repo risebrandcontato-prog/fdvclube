@@ -16,13 +16,14 @@ function CampoDetailPage() {
   const navigate = useNavigate();
   const listFn = useServerFn(listLocations);
 
-  const { data: locations, isLoading } = useQuery({
+  const { data: locationsRes, isLoading } = useQuery({
     queryKey: ["locations"],
     queryFn: () => listFn(),
     staleTime: 30_000,
   });
 
-  const campo = (locations ?? []).find((l: any) => l.id === id);
+  const locations = locationsRes?.data ?? [];
+  const campo = locations.find((l: any) => l.id === id);
 
   if (isLoading) {
     return (

@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { PlayerCard } from "@/components/PlayerCard";
 
 export const Route = createFileRoute("/app/jogos/$id")({
   component: GameDetailPage,
@@ -60,7 +61,7 @@ function GameDetailPage() {
   const detailFn = useServerFn(getGameDetail);
   const confirmFn = useServerFn(setMyConfirmation);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error } = useQuery({
     queryKey: ["game", id],
     queryFn: () => detailFn({ data: { id } }),
     staleTime: 1000 * 60 * 5,
@@ -108,7 +109,7 @@ function GameDetailPage() {
     }
   }
 
-  if (isLoading || !game) {
+  if (isLoading) {
     return (
       <div className="min-h-screen bg-background">
         <div className="h-64 bg-muted animate-pulse" />
@@ -118,6 +119,36 @@ function GameDetailPage() {
           <div className="h-24 bg-muted rounded animate-pulse" />
           <div className="h-32 bg-muted rounded animate-pulse" />
         </div>
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center px-4">
+        <Card className="w-full max-w-md p-5 text-center space-y-3">
+          <p className="text-sm text-destructive font-medium">
+            {error instanceof Error ? error.message : "Erro ao carregar o jogo."}
+          </p>
+          <Link to="/app/jogos" className="inline-flex items-center gap-2 text-sm text-primary hover:underline">
+            <ArrowLeft className="h-4 w-4" />
+            Voltar para jogos
+          </Link>
+        </Card>
+      </div>
+    );
+  }
+
+  if (!game) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center px-4">
+        <Card className="w-full max-w-md p-5 text-center space-y-3">
+          <p className="text-sm font-medium">Jogo não encontrado.</p>
+          <Link to="/app/jogos" className="inline-flex items-center gap-2 text-sm text-primary hover:underline">
+            <ArrowLeft className="h-4 w-4" />
+            Voltar para jogos
+          </Link>
+        </Card>
       </div>
     );
   }
@@ -267,52 +298,18 @@ function GameDetailPage() {
               Ninguém confirmou presença ainda.
             </p>
           ) : (
-            <div className="grid grid-cols-4 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {confirmedList.map((c: any, idx: number) => {
                 const p = c.players;
-                const isMe = c.player_id === player?.id;
                 return (
-                  <div
+                  <PlayerCard
                     key={idx}
-                    className={`flex flex-col items-center text-center p-2 rounded-xl border ${
-                      isMe
-                        ? "border-emerald-500/40 bg-emerald-500/5"
-                        : "border-border/50 bg-card"
-                    }`}
-                  >
-                    <div
-                      className={`w-14 h-14 rounded-full border-2 flex items-center justify-center text-sm font-bold overflow-hidden mb-1.5 ${
-                        isMe
-                          ? "border-emerald-400 bg-emerald-500/10"
-                          : "border-background bg-muted"
-                      }`}
-                    >
-                      {p?.avatar_url ? (
-                        <img
-                          src={p.avatar_url}
-                          alt={p?.name}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <span className="text-muted-foreground">
-                          {(p?.name ?? "?").charAt(0).toUpperCase()}
-                        </span>
-                      )}
-                    </div>
-                    <span className="text-[11px] font-medium leading-tight truncate w-full">
-                      {p?.name ?? "Jogador"}
-                    </span>
-                    {p?.position && (
-                      <span className="text-[9px] text-muted-foreground mt-0.5">
-                        {p.position}
-                      </span>
-                    )}
-                    {isMe && (
-                      <span className="text-[9px] font-semibold text-emerald-400 mt-0.5">
-                        Você
-                      </span>
-                    )}
-                  </div>
+                    playerId={c.player_id}
+                    name={p?.name ?? "Jogador"}
+                    avatarUrl={p?.avatar_url}
+                    position={p?.position}
+                    status={c.status}
+                  />
                 );
               })}
             </div>
@@ -326,29 +323,18 @@ function GameDetailPage() {
               <CircleX className="h-4 w-4" />
               Não vão ({cancelledList.length})
             </h2>
-            <div className="flex flex-wrap gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {cancelledList.map((c: any, idx: number) => {
                 const p = c.players;
                 return (
-                  <div
+                  <PlayerCard
                     key={idx}
-                    className="flex items-center gap-2 px-2.5 py-1.5 rounded-full border border-red-500/20 bg-red-500/5"
-                  >
-                    <div className="w-5 h-5 rounded-full bg-muted flex items-center justify-center text-[9px] font-bold overflow-hidden">
-                      {p?.avatar_url ? (
-                        <img
-                          src={p.avatar_url}
-                          alt=""
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <span>{(p?.name ?? "?").charAt(0).toUpperCase()}</span>
-                      )}
-                    </div>
-                    <span className="text-xs text-red-300/80">
-                      {p?.name ?? "Jogador"}
-                    </span>
-                  </div>
+                    playerId={c.player_id}
+                    name={p?.name ?? "Jogador"}
+                    avatarUrl={p?.avatar_url}
+                    position={p?.position}
+                    status={c.status}
+                  />
                 );
               })}
             </div>

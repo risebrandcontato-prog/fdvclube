@@ -7,6 +7,7 @@ import { MapPin, ExternalLink, CheckCircle2, XCircle } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { PlayerAvatar } from "@/components/PlayerAvatar";
+import { PlayerCard } from "@/components/PlayerCard";
 import { PaymentBadge, ConfirmBadge } from "@/components/Badges";
 import { FdvLogo } from "@/components/FdvLogo";
 import { getHomeData, setMyConfirmation } from "@/lib/games.functions";
@@ -81,6 +82,11 @@ function HomePage() {
                 weekday: "long", day: "2-digit", month: "long", hour: "2-digit", minute: "2-digit",
               })}
             </div>
+            {data.result ? (
+              <div className="mt-1 text-sm font-semibold text-primary">
+                Placar: {data.result.score_a ?? 0} x {data.result.score_b ?? 0}
+              </div>
+            ) : null}
             {data.nextGame.locations ? (
               <div className="mt-2 flex items-center gap-1 text-sm text-foreground/80">
                 <MapPin className="h-4 w-4 text-primary" />
@@ -154,14 +160,18 @@ function HomePage() {
             <div className="text-xs uppercase tracking-wider text-muted-foreground font-semibold mb-3">
               Confirmados ({data.confirmations.filter((c) => c.status === "confirmed").length})
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {data.confirmations
                 .filter((c) => c.status === "confirmed")
                 .map((c) => (
-                  <div key={c.player_id} className="flex items-center gap-2 rounded-full bg-secondary px-2 py-1">
-                    <PlayerAvatar name={c.players?.name} src={c.players?.avatar_url} className="h-6 w-6" />
-                    <span className="text-xs font-medium pr-1">{c.players?.name}</span>
-                  </div>
+                  <PlayerCard
+                    key={c.player_id}
+                    playerId={c.player_id}
+                    name={c.players?.name ?? "Jogador"}
+                    avatarUrl={c.players?.avatar_url}
+                    position={c.players?.position}
+                    status="confirmed"
+                  />
                 ))}
               {data.confirmations.filter((c) => c.status === "confirmed").length === 0 ? (
                 <span className="text-sm text-muted-foreground">Ninguém confirmado ainda.</span>

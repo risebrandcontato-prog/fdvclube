@@ -42,7 +42,7 @@ function CamposPage() {
     );
   }
 
-  const locations = data ?? [];
+  const locations = data?.data ?? [];
 
   return (
     <div className="px-4 py-4 space-y-4">
@@ -52,6 +52,7 @@ function CamposPage() {
           {locations.length} campo{locations.length !== 1 ? "s" : ""}
         </span>
       </div>
+      {data?.error ? <p className="text-sm text-destructive">{data.error}</p> : null}
 
       {locations.map((l: any) => (
         <button

@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
@@ -35,6 +35,7 @@ import {
   adminSetConfirmation,
   adminSetPayment,
   adminUpdateGame,
+  saveGameStats,
 } from "@/lib/admin.functions";
 
 export const Route = createFileRoute("/admin/jogos/$id")({
@@ -88,8 +89,9 @@ function AdminGameDetailPage() {
   const confirmFn = useServerFn(adminSetConfirmation);
   const paymentFn = useServerFn(adminSetPayment);
   const updateFn = useServerFn(adminUpdateGame);
+  const saveStatsFn = useServerFn(saveGameStats);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error } = useQuery({
     queryKey: ["adminGame", id],
     queryFn: () => detailFn({ data: { id } }),
     staleTime: 1000 * 60 * 5,
@@ -102,8 +104,11 @@ function AdminGameDetailPage() {
   const players = (data?.players ?? []) as any[];
   const confirmations = (data?.confirmations ?? []) as any[];
   const payments = (data?.payments ?? []) as any[];
+  const gameStats = (data?.stats ?? []) as any[];
+  const gameResult = data?.result as any;
 
   const [editOpen, setEditOpen] = useState(false);
+  const [statsSaving, setStatsSaving] = useState(false);
   const [editForm, setEditForm] = useState({
     title: "",
     date: "",
@@ -115,6 +120,7 @@ function AdminGameDetailPage() {
     has_ball: false,
     vests: "none" as "none" | "orange" | "black" | "both",
   });
+  const [statsForm, setStatsForm] = useState<Record<string, any>>({});
 
   const confirmedList = confirmations.filter((c: any) => c.status === "confirmed");
   const cancelledList = confirmations.filter((c: any) => c.status === "cancelled");
@@ -208,7 +214,76 @@ function AdminGameDetailPage() {
     setEditOpen(true);
   }
 
-  if (isLoading || !game) {
+  function getStat(playerId: string) {
+    return statsForm[playerId] ?? {
+      goals: 0,
+      assists: 0,
+      own_goals: 0,
+      yellow_cards: 0,
+      red_cards: 0,
+      rating: null,
+      notes: "",
+    };
+  }
+
+  function updateStat(playerId: string, patch: Record<string, any>) {
+    setStatsForm((prev) => ({
+      ...prev,
+      [playerId]: { ...getStat(playerId), ...patch },
+    }));
+  }
+
+  async function onSaveStats() {
+    const confirmedPlayerIds = confirmedList.map((c: any) => c.player_id);
+    const payload = confirmedPlayerIds.map((playerId: string) => {
+      const stat = getStat(playerId);
+      return {
+        playerId,
+        goals: Number(stat.goals || 0),
+        assists: Number(stat.assists || 0),
+        own_goals: Number(stat.own_goals || 0),
+        yellow_cards: Number(stat.yellow_cards || 0),
+        red_cards: Number(stat.red_cards || 0),
+        rating: stat.rating ? Number(stat.rating) : null,
+        notes: stat.notes?.trim() ? stat.notes.trim() : null,
+      };
+    });
+
+    try {
+      setStatsSaving(true);
+      const result = await saveStatsFn({ data: { gameId: id, stats: payload } });
+      if (!result.success) {
+        toast.error(result.error ?? "Erro ao salvar estatísticas.");
+        return;
+      }
+      toast.success("Estatísticas salvas com sucesso!");
+      qc.invalidateQueries({ queryKey: ["adminGame", id] });
+      qc.invalidateQueries({ queryKey: ["games"] });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erro ao salvar estatísticas");
+    } finally {
+      setStatsSaving(false);
+    }
+  }
+
+  useEffect(() => {
+    if (gameStats.length === 0) return;
+    const initial: Record<string, any> = {};
+    for (const stat of gameStats) {
+      initial[stat.player_id] = {
+        goals: stat.goals ?? 0,
+        assists: stat.assists ?? 0,
+        own_goals: stat.own_goals ?? 0,
+        yellow_cards: stat.yellow_cards ?? 0,
+        red_cards: stat.red_cards ?? 0,
+        rating: stat.rating ?? null,
+        notes: stat.notes ?? "",
+      };
+    }
+    setStatsForm(initial);
+  }, [gameStats]);
+
+  if (isLoading) {
     return (
       <div className="min-h-screen bg-background">
         <div className="h-64 bg-muted animate-pulse" />
@@ -216,6 +291,36 @@ function AdminGameDetailPage() {
           <div className="h-6 w-2/3 bg-muted rounded animate-pulse" />
           <div className="h-32 bg-muted rounded animate-pulse" />
         </div>
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center px-4">
+        <Card className="w-full max-w-md p-5 text-center space-y-3">
+          <p className="text-sm text-destructive font-medium">
+            {error instanceof Error ? error.message : "Erro ao carregar detalhes do jogo."}
+          </p>
+          <Link to="/admin/jogos" className="inline-flex items-center gap-2 text-sm text-primary hover:underline">
+            <ArrowLeft className="h-4 w-4" />
+            Voltar para jogos
+          </Link>
+        </Card>
+      </div>
+    );
+  }
+
+  if (!game) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center px-4">
+        <Card className="w-full max-w-md p-5 text-center space-y-3">
+          <p className="text-sm font-medium">Jogo não encontrado.</p>
+          <Link to="/admin/jogos" className="inline-flex items-center gap-2 text-sm text-primary hover:underline">
+            <ArrowLeft className="h-4 w-4" />
+            Voltar para jogos
+          </Link>
+        </Card>
       </div>
     );
   }
@@ -536,6 +641,48 @@ function AdminGameDetailPage() {
               </div>
             )}
           </div>
+        </Card>
+
+        {/* ===== ESTATÍSTICAS ===== */}
+        <Card className="p-4 space-y-3 border border-border/80">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold">Estatísticas</h2>
+            {gameResult ? (
+              <span className="text-xs text-muted-foreground">
+                Placar atual: {gameResult.score_a ?? 0} x {gameResult.score_b ?? 0}
+              </span>
+            ) : null}
+          </div>
+
+          {confirmedList.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Nenhum jogador confirmado para registrar estatísticas.</p>
+          ) : (
+            <div className="space-y-3">
+              {confirmedList.map((c: any) => {
+                const player = players.find((p: any) => p.id === c.player_id);
+                const stat = getStat(c.player_id);
+                return (
+                  <div key={c.player_id} className="rounded-lg border border-border/60 p-3 space-y-2">
+                    <p className="text-sm font-semibold">{player?.name ?? "Jogador"}</p>
+                    <div className="grid grid-cols-3 gap-2">
+                      <Input type="number" min={0} value={stat.goals} onChange={(e) => updateStat(c.player_id, { goals: Number(e.target.value) })} placeholder="Gols" />
+                      <Input type="number" min={0} value={stat.assists} onChange={(e) => updateStat(c.player_id, { assists: Number(e.target.value) })} placeholder="Assist." />
+                      <Input type="number" min={0} value={stat.own_goals} onChange={(e) => updateStat(c.player_id, { own_goals: Number(e.target.value) })} placeholder="Gol contra" />
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      <Input type="number" min={0} value={stat.yellow_cards} onChange={(e) => updateStat(c.player_id, { yellow_cards: Number(e.target.value) })} placeholder="Amarelo" />
+                      <Input type="number" min={0} value={stat.red_cards} onChange={(e) => updateStat(c.player_id, { red_cards: Number(e.target.value) })} placeholder="Vermelho" />
+                      <Input type="number" min={1} max={10} value={stat.rating ?? ""} onChange={(e) => updateStat(c.player_id, { rating: e.target.value ? Number(e.target.value) : null })} placeholder="Nota 1-10" />
+                    </div>
+                    <Textarea value={stat.notes ?? ""} onChange={(e) => updateStat(c.player_id, { notes: e.target.value })} placeholder="Observações (opcional)" />
+                  </div>
+                );
+              })}
+              <Button onClick={onSaveStats} disabled={statsSaving}>
+                {statsSaving ? "Salvando..." : "Salvar Estatísticas"}
+              </Button>
+            </div>
+          )}
         </Card>
       </div>
 

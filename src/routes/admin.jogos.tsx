@@ -82,6 +82,22 @@ function AdminJogos() {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(form.date)) {
+      toast.error("Data inválida. Use uma data válida.");
+      return;
+    }
+    if (!/^([01]\d|2[0-3]):([0-5]\d)$/.test(form.time)) {
+      toast.error("Hora inválida. Use o formato HH:mm.");
+      return;
+    }
+    if (!Number.isFinite(form.contribution_amount) || form.contribution_amount < 0) {
+      toast.error("Valor de contribuição inválido.");
+      return;
+    }
+    if (!Number.isInteger(form.max_players) || form.max_players < 1 || form.max_players > 50) {
+      toast.error("Número de jogadores deve estar entre 1 e 50.");
+      return;
+    }
     try {
       await createFn({ data: { ...form, location_id: form.location_id || null } });
       toast.success("Jogo criado!");
@@ -123,6 +139,7 @@ function AdminJogos() {
 
   const today = new Date().toISOString().slice(0, 10);
   const games = data?.games ?? [];
+  const gamesError = data?.error;
   const upcoming = games.filter((g: any) => g.date >= today && g.status !== "cancelled");
   const past = games.filter((g: any) => g.date < today || g.status === "done" || g.status === "cancelled");
 
@@ -160,7 +177,7 @@ function AdminJogos() {
                   onChange={(e) => setForm({ ...form, location_id: e.target.value })}
                 >
                   <option value="">Selecione...</option>
-                  {(locations ?? []).map((l: any) => <option key={l.id} value={l.id}>{l.name}</option>)}
+                  {(locations?.data ?? []).map((l: any) => <option key={l.id} value={l.id}>{l.name}</option>)}
                 </select>
               </div>
               <div className="grid grid-cols-2 gap-3">
@@ -225,6 +242,7 @@ function AdminJogos() {
 
       <section className="space-y-2">
         <h2 className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Próximos</h2>
+        {gamesError ? <p className="text-sm text-destructive">{gamesError}</p> : null}
         {isLoading ? (
           <div className="space-y-2">
             <div className="h-20 bg-muted rounded-lg animate-pulse" />
@@ -255,6 +273,7 @@ function AdminJogos() {
                       {new Date(`${g.date}T${g.time}`).toLocaleString("pt-BR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
                       {" · "}{g.locations?.name ?? "Sem campo"}
                       {" · "}{confirmed}/{g.max_players} confirmados
+                      {g.result ? ` · Placar ${g.result.score_a ?? 0} x ${g.result.score_b ?? 0}` : ""}
                     </div>
                   </div>
                   <div className="flex flex-col items-end gap-1.5">
@@ -295,6 +314,7 @@ function AdminJogos() {
                     {new Date(`${g.date}T${g.time}`).toLocaleString("pt-BR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
                     {" · "}{g.locations?.name ?? "Sem campo"}
                     {" · "}{confirmed}/{g.max_players} confirmados
+                    {g.result ? ` · Placar ${g.result.score_a ?? 0} x ${g.result.score_b ?? 0}` : ""}
                   </div>
                 </div>
                 <div className="flex flex-col items-end gap-1.5">

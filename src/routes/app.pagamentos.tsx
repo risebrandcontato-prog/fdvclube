@@ -12,8 +12,9 @@ export const Route = createFileRoute("/app/pagamentos")({
 function PagamentosPage() {
   const fn = useServerFn(listMyPayments);
   const { data } = useQuery({ queryKey: ["my-payments"], queryFn: () => fn() });
+  const payments = data?.data ?? [];
 
-  const pendingTotal = (data ?? [])
+  const pendingTotal = payments
     .filter((p) => p.status === "pending" || p.status === "late")
     .reduce((s, p) => s + Number(p.amount ?? 0), 0);
 
@@ -27,7 +28,7 @@ function PagamentosPage() {
       </Card>
 
       <div className="space-y-2">
-        {(data ?? []).map((p) => (
+        {payments.map((p) => (
           <Card key={p.id} className="bg-card p-4 flex items-center justify-between">
             <div>
               <div className="font-medium">{p.games?.title}</div>
@@ -39,9 +40,10 @@ function PagamentosPage() {
             <PaymentBadge status={p.status as "paid" | "pending" | "late" | "exempt"} />
           </Card>
         ))}
-        {(data ?? []).length === 0 ? (
+        {payments.length === 0 ? (
           <p className="text-sm text-muted-foreground">Nenhum pagamento registrado.</p>
         ) : null}
+        {data?.error ? <p className="text-sm text-destructive">{data.error}</p> : null}
       </div>
     </div>
   );
