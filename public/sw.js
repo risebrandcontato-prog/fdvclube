@@ -1,4 +1,4 @@
-const CACHE_NAME = "fdv-v1";
+const CACHE_NAME = "fdv-v2";
 const STATIC_ASSETS = [
   "/",
   "/app",
@@ -51,7 +51,52 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // 3. Imagens do Supabase Storage → Cache First com fallback
+  // 3. JS Chunks (code splitting Vite) → NetworkFirst CRÍTICO
+  // Cada deploy gera hashes novos nos chunks. Se o chunk não existe,
+  // o app quebra. NetworkFirst garante que pegamos o chunk correto.
+  if (request.destination === "script" || url.pathname.match(/\/assets\/.*\.js$/)) {
+    event.respondWith(
+      fetch(request)
+        .then((networkResponse) => {
+          if (networkResponse.ok) {
+            const clone = networkResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+          }
+          return networkResponse;
+        })
+        .catch(() => {
+          return caches.match(request).then((cached) => {
+            if (cached) return cached;
+            // Chunk não existe mais — notifica app para reload
+            self.clients.matchAll().then((clients) => {
+              clients.forEach((client) => {
+                client.postMessage({ type: "CHUNK_MISSING", url: request.url });
+              });
+            });
+            return new Response("Chunk não encontrado", { status: 404 });
+          });
+        })
+    );
+    return;
+  }
+
+  // 4. CSS → NetworkFirst (também pode ter hash no Vite)
+  if (request.destination === "style" || url.pathname.match(/\/assets\/.*\.css$/)) {
+    event.respondWith(
+      fetch(request)
+        .then((networkResponse) => {
+          if (networkResponse.ok) {
+            const clone = networkResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+          }
+          return networkResponse;
+        })
+        .catch(() => caches.match(request))
+    );
+    return;
+  }
+
+  // 5. Imagens do Supabase Storage → Cache First com fallback
   if (url.pathname.startsWith("/storage/") || url.hostname.includes("supabase")) {
     event.respondWith(
       caches.match(request).then((cached) => {
@@ -68,13 +113,11 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // 4. Assets estáticos (JS, CSS, fontes, imagens) → Stale While Revalidate
+  // 6. Outras imagens/fontes → Stale While Revalidate
   if (
-    request.destination === "style" ||
-    request.destination === "script" ||
     request.destination === "font" ||
     request.destination === "image" ||
-    url.pathname.match(/\.(js|css|png|jpg|jpeg|svg|webp|woff2?)$/)
+    url.pathname.match(/\.(png|jpg|jpeg|svg|webp|woff2?)$/)
   ) {
     event.respondWith(
       caches.match(request).then((cached) => {
@@ -91,7 +134,7 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // 5. Navegação (HTML) → Network First com fallback offline
+  // 7. Navegação (HTML) → Network First com fallback offline
   if (request.mode === "navigate") {
     event.respondWith(
       fetch(request)
@@ -103,7 +146,6 @@ self.addEventListener("fetch", (event) => {
         .catch(() => {
           return caches.match(request).then((cached) => {
             if (cached) return cached;
-            // Se nem cache tem, tenta a raiz (SPA fallback)
             return caches.match("/");
           });
         })
@@ -111,7 +153,7 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // 6. Default → cache com fallback rede
+  // 8. Default → cache com fallback rede
   event.respondWith(
     caches.match(request).then((cached) => {
       return cached || fetch(request);
@@ -119,7 +161,7 @@ self.addEventListener("fetch", (event) => {
   );
 });
 
-// ── Mensagens do cliente (update) ──
+// ── Mensagens do cliente (update + chunk missing) ──
 self.addEventListener("message", (event) => {
   if (event.data === "SKIP_WAITING") {
     self.skipWaiting();

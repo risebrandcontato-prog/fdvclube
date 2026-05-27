@@ -41,6 +41,20 @@ export function usePWA(): PWAState & { updateServiceWorker: () => void } {
       window.location.reload();
     });
 
+    // Listener para mensagens do SW (chunk missing / erro de code splitting)
+    navigator.serviceWorker.addEventListener("message", (event) => {
+      if (event.data?.type === "CHUNK_MISSING") {
+        toast.error("App desatualizado", {
+          description: "Recarregando para atualizar...",
+          duration: 2000,
+        });
+        // Força reload após 2 segundos para pegar novos chunks
+        setTimeout(() => {
+          window.location.reload();
+        }, 2000);
+      }
+    });
+
     // Registra o SW
     navigator.serviceWorker
       .register("/sw.js")
