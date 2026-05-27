@@ -3,6 +3,23 @@ import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { requirePlayer } from "./session.server";
 
+// ─────────────────────────────────────────────
+// Types
+// ─────────────────────────────────────────────
+export interface Location {
+  id: string;
+  name: string;
+  address: string | null;
+  maps_url: string | null;
+  photo_url: string | null;
+  phone: string | null;
+  price_per_hour: number | null;
+  opening_hours: string | null;
+  rating: number | null;
+  notes: string | null;
+  created_at: string;
+}
+
 export const listGames = createServerFn({ method: "GET" }).handler(async () => {
   const me = await requirePlayer();
 
@@ -167,7 +184,7 @@ export const listLocations = createServerFn({ method: "GET" }).handler(async () 
     .from("locations")
     .select("*")
     .order("name");
-  return data ?? [];
+  return (data ?? []) as Location[];
 });
 
 export const listMyPayments = createServerFn({ method: "GET" }).handler(async () => {
