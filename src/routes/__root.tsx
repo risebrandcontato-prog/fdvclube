@@ -73,8 +73,8 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, maximum-scale=1" },
-      { name: "theme-color", content: "#22c55e" },
-      { name: "msapplication-TileColor", content: "#22c55e" },
+      { name: "theme-color", content: "#1f1816" },
+      { name: "msapplication-TileColor", content: "#1f1816" },
       { name: "msapplication-TileImage", content: "/icon-192.png" },
       { name: "apple-mobile-web-app-capable", content: "yes" },
       { name: "apple-mobile-web-app-status-bar-style", content: "black-translucent" },

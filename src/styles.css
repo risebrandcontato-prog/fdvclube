@@ -3,6 +3,7 @@
 @import "tw-animate-css";
 
 @custom-variant dark (&:is(.dark *));
+@import url("https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700;800&display=swap");
 
 @theme inline {
   --radius-sm: calc(var(--radius) - 4px);
@@ -42,55 +43,64 @@
 :root {
   --radius: 1rem;
 
-  --background: oklch(0.16 0.012 160);
-  --foreground: oklch(0.97 0.005 160);
+  --background: oklch(0.14 0.01 20);
+  --foreground: oklch(0.96 0.01 75);
 
-  --card: oklch(0.21 0.015 160);
-  --card-foreground: oklch(0.97 0.005 160);
+  --card: oklch(0.19 0.015 25);
+  --card-foreground: oklch(0.96 0.01 75);
 
-  --popover: oklch(0.21 0.015 160);
-  --popover-foreground: oklch(0.97 0.005 160);
+  --popover: oklch(0.19 0.015 25);
+  --popover-foreground: oklch(0.96 0.01 75);
 
-  --primary: oklch(0.74 0.19 145);
-  --primary-foreground: oklch(0.15 0.02 160);
-  --primary-glow: oklch(0.82 0.22 145);
+  --primary: oklch(0.82 0.15 82);
+  --primary-foreground: oklch(0.15 0.02 30);
+  --primary-glow: oklch(0.88 0.18 85);
 
-  --secondary: oklch(0.27 0.02 160);
-  --secondary-foreground: oklch(0.97 0.005 160);
+  --secondary: oklch(0.25 0.015 28);
+  --secondary-foreground: oklch(0.94 0.01 75);
 
-  --muted: oklch(0.25 0.015 160);
-  --muted-foreground: oklch(0.65 0.02 160);
+  --muted: oklch(0.23 0.012 28);
+  --muted-foreground: oklch(0.73 0.012 70);
 
-  --accent: oklch(0.30 0.04 145);
-  --accent-foreground: oklch(0.97 0.005 160);
+  --accent: oklch(0.33 0.13 25);
+  --accent-foreground: oklch(0.95 0.01 75);
 
-  --destructive: oklch(0.62 0.22 25);
+  --destructive: oklch(0.59 0.23 25);
   --destructive-foreground: oklch(0.98 0 0);
 
-  --success: oklch(0.74 0.19 145);
-  --success-foreground: oklch(0.15 0.02 160);
+  --success: oklch(0.76 0.14 145);
+  --success-foreground: oklch(0.14 0.02 145);
 
-  --warning: oklch(0.78 0.16 80);
+  --warning: oklch(0.83 0.14 82);
   --warning-foreground: oklch(0.18 0.02 80);
 
-  --border: oklch(0.28 0.015 160);
-  --input: oklch(0.25 0.015 160);
-  --ring: oklch(0.74 0.19 145);
+  --border: oklch(0.31 0.02 35);
+  --input: oklch(0.24 0.015 28);
+  --ring: oklch(0.82 0.15 82);
 
-  --field: oklch(0.42 0.12 145);
+  --field: oklch(0.44 0.1 25);
 
-  --gradient-primary: linear-gradient(135deg, oklch(0.74 0.19 145), oklch(0.62 0.18 155));
-  --gradient-field: linear-gradient(160deg, oklch(0.30 0.06 145) 0%, oklch(0.18 0.02 160) 100%);
-  --shadow-glow: 0 8px 32px -8px oklch(0.74 0.19 145 / 0.45);
+  --gradient-primary: linear-gradient(135deg, oklch(0.82 0.15 82), oklch(0.66 0.19 35));
+  --gradient-field: linear-gradient(160deg, oklch(0.32 0.08 25) 0%, oklch(0.16 0.01 20) 100%);
+  --shadow-glow: 0 8px 32px -8px oklch(0.82 0.15 82 / 0.4);
   --shadow-card: 0 1px 2px oklch(0 0 0 / 0.4), 0 8px 24px -8px oklch(0 0 0 / 0.3);
 }
 
 @layer base {
   * { border-color: var(--color-border); }
   html, body { background-color: var(--color-background); color: var(--color-foreground); }
+  html { font-family: "Barlow", "Inter", "Segoe UI", Roboto, Arial, sans-serif; }
   body {
     -webkit-tap-highlight-color: transparent;
     overscroll-behavior-y: contain;
+    background-image:
+      radial-gradient(circle at 15% -10%, oklch(0.58 0.11 35 / 0.15) 0%, transparent 38%),
+      radial-gradient(circle at 100% 0%, oklch(0.74 0.13 82 / 0.12) 0%, transparent 42%),
+      linear-gradient(180deg, oklch(0.16 0.01 20), oklch(0.13 0.01 20));
+    background-attachment: fixed;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 }
 

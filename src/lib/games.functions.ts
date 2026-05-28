@@ -165,13 +165,19 @@ export const getGameDetail = createServerFn({ method: "POST" })
       player: confPlayersMap.get(c.player_id) ?? null,
     }));
 
-    const { data: myPayment, error: paymentError } = await supabaseAdmin
+    const { data: payment, error: paymentError } = await supabaseAdmin
       .from("payments")
-      .select("id, game_id, player_id, amount, status, paid_at, notes, proof_url, approved_by_admin_at, admin_notes")
+      .select("status, amount, notes")
       .eq("game_id", data.id)
       .eq("player_id", me.id)
       .maybeSingle();
     if (paymentError) throw new Error(paymentError.message);
+
+    const { data: payments, error: paymentsError } = await supabaseAdmin
+      .from("payments")
+      .select("player_id, status, amount, notes")
+      .eq("game_id", data.id);
+    if (paymentsError) throw new Error(paymentsError.message);
 
     const { data: teams, error: teamsError } = await supabaseAdmin
       .from("game_teams")
@@ -231,7 +237,8 @@ export const getGameDetail = createServerFn({ method: "POST" })
       game,
       location,
       confirmations: confirmationsWithPlayers,
-      myPayment,
+      myPayment: payment ?? { status: "pending", amount: 0, notes: null },
+      payments: payments ?? [],
       teams: teamsWithPlayers,
       stats: statsWithPlayers,
       result: result ?? null,

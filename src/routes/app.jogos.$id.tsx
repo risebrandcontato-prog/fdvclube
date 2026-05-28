@@ -38,7 +38,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PlayerCard } from "@/components/PlayerCard";
-import { PaymentBadge } from "@/components/PaymentBadge";
 
 export const Route = createFileRoute("/app/jogos/$id")({
   component: GameDetailPage,
@@ -106,6 +105,46 @@ const positionGroups: Array<{
   { key: "meio", label: "Meios", icon: "⚙️" },
   { key: "atacante", label: "Atacantes", icon: "⚡" },
 ];
+
+type PaymentStatus = "paid" | "pending" | "late" | "exempt" | null | undefined;
+
+const paymentBadgeConfig: Record<Exclude<PaymentStatus, null | undefined>, { label: string; className: string }> = {
+  paid: {
+    label: "Pago",
+    className: "bg-emerald-500/10 text-emerald-300 border-emerald-500/30",
+  },
+  pending: {
+    label: "Pendente",
+    className: "bg-amber-500/10 text-amber-300 border-amber-500/30",
+  },
+  late: {
+    label: "Atrasado",
+    className: "bg-red-500/10 text-red-300 border-red-500/30",
+  },
+  exempt: {
+    label: "Isento",
+    className: "bg-blue-500/10 text-blue-300 border-blue-500/30",
+  },
+};
+
+function getPaymentBadge(status: PaymentStatus, size: "sm" | "xs" = "sm") {
+  const sizeClasses = size === "xs" ? "px-1.5 py-0.5 text-[10px]" : "px-2 py-0.5 text-xs";
+
+  if (!status) {
+    return (
+      <span className={`inline-flex items-center rounded-full border border-zinc-500/30 bg-zinc-500/10 font-semibold leading-none whitespace-nowrap ${sizeClasses} text-zinc-300`}>
+        Pendente
+      </span>
+    );
+  }
+
+  const cfg = paymentBadgeConfig[status];
+  return (
+    <span className={`inline-flex items-center rounded-full border font-semibold leading-none whitespace-nowrap ${sizeClasses} ${cfg.className}`}>
+      {cfg.label}
+    </span>
+  );
+}
 
 function CountdownTimer({ targetDate }: { targetDate: string }) {
   const [timeLeft, setTimeLeft] = useState<{
@@ -180,6 +219,7 @@ function GameDetailPage() {
   const location = data?.location;
   const confirmations = (data?.confirmations ?? []) as any[];
   const myPayment = data?.myPayment as any;
+  const payments = (data?.payments ?? []) as Array<{ player_id: string; status: PaymentStatus; amount: number | null }>;
   const teams = (data?.teams ?? []) as any[];
   const result = data?.result as any;
   const stats = (data?.stats ?? []) as any[];
@@ -191,6 +231,9 @@ function GameDetailPage() {
   const myStatus = myConf?.status as "confirmed" | "cancelled" | undefined;
 
   const myStats = stats.find((s: any) => s.player_id === player?.id);
+  const paymentStatus = (myPayment?.status ?? "pending") as PaymentStatus;
+  const paymentAmount = Number(myPayment?.amount ?? 0);
+  const paymentsByPlayer = new Map(payments.map((p) => [p.player_id, p]));
   const gameStatus = String(game?.status ?? "scheduled");
   const isFinished = gameStatus === "done" || gameStatus === "finished";
   const hasSubmittedStats = !!myStats && isFinished;
@@ -262,6 +305,9 @@ function GameDetailPage() {
         qc.invalidateQueries({ queryKey: ["game", id] }),
       )
       .on("postgres_changes", { event: "*", schema: "public", table: "confirmations", filter: `game_id=eq.${id}` }, () =>
+        qc.invalidateQueries({ queryKey: ["game", id] }),
+      )
+      .on("postgres_changes", { event: "*", schema: "public", table: "payments", filter: `game_id=eq.${id}` }, () =>
         qc.invalidateQueries({ queryKey: ["game", id] }),
       )
       .subscribe();
@@ -448,6 +494,29 @@ function GameDetailPage() {
               Estou machucado / impedido
             </button>
           )}
+        </Card>
+
+        {/* ===== MEU PAGAMENTO ===== */}
+        <Card className="p-4 border border-border/80">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold inline-flex items-center gap-1.5">
+              <CreditCard className="h-4 w-4 text-primary" />
+              Meu pagamento
+            </h2>
+            {getPaymentBadge(paymentStatus)}
+          </div>
+          <div className="mt-2">
+            {paymentStatus === "exempt" ? (
+              <p className="text-sm font-medium text-blue-300">Isento</p>
+            ) : (
+              <p className="text-sm font-medium">
+                Valor:{" "}
+                <span className="font-bold">
+                  R$ {paymentAmount.toFixed(2)}
+                </span>
+              </p>
+            )}
+          </div>
         </Card>
 
         {/* ===== TIMES ===== */}
@@ -815,6 +884,8 @@ function GameDetailPage() {
                     <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
                       {list.map((c: any) => {
                         const p = c.player;
+                        const playerPayment = paymentsByPlayer.get(c.player_id);
+                        const playerPaymentStatus = (playerPayment?.status ?? "pending") as PaymentStatus;
                         return (
                           <PlayerCard
                             key={c.player_id}
@@ -823,6 +894,7 @@ function GameDetailPage() {
                             avatarUrl={p?.avatar_url}
                             position={p?.position}
                             status="confirmed"
+                            rightSlot={getPaymentBadge(playerPaymentStatus, "xs")}
                           />
                         );
                       })}
@@ -840,6 +912,8 @@ function GameDetailPage() {
                   <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
                     {confirmedOther.map((c: any) => {
                       const p = c.player;
+                      const playerPayment = paymentsByPlayer.get(c.player_id);
+                      const playerPaymentStatus = (playerPayment?.status ?? "pending") as PaymentStatus;
                       return (
                         <PlayerCard
                           key={c.player_id}
@@ -848,6 +922,7 @@ function GameDetailPage() {
                           avatarUrl={p?.avatar_url}
                           position={p?.position ?? "—"}
                           status="confirmed"
+                          rightSlot={getPaymentBadge(playerPaymentStatus, "xs")}
                         />
                       );
                     })}
@@ -935,13 +1010,7 @@ function GameDetailPage() {
                 <CreditCard className="h-3.5 w-3.5" />
                 Meu pagamento
               </span>
-              {myPayment?.status ? (
-                <PaymentBadge status={myPayment.status} />
-              ) : (
-                <span className="inline-flex items-center rounded-full border border-border bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
-                  Não registrado
-                </span>
-              )}
+              {getPaymentBadge(paymentStatus)}
             </div>
             {game.notes && (
               <div className="pt-2 border-t border-border/40">

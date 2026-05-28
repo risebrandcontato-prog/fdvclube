@@ -18,6 +18,10 @@ import {
   Volleyball,
   Shirt,
   MessageCircle,
+  CloudSun,
+  Thermometer,
+  Wind,
+  Droplets,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -35,22 +39,40 @@ export const Route = createFileRoute("/app/")({
   component: HomePage,
 });
 
-const positionGroups: Array<{
-  key: "goleiro" | "defensor" | "meio" | "atacante";
-  label: string;
-  icon: string;
-}> = [
-  { key: "goleiro", label: "Goleiros", icon: "🧤" },
-  { key: "defensor", label: "Defensores", icon: "🛡️" },
-  { key: "meio", label: "Meios", icon: "⚙️" },
-  { key: "atacante", label: "Atacantes", icon: "⚡" },
-];
-
 const vestsUi: Record<string, { label: string; cls: string }> = {
   none: { label: "Sem coletes", cls: "bg-muted text-muted-foreground border-border" },
   orange: { label: "Coletes laranja", cls: "bg-orange-500/10 text-orange-600 border-orange-500/20" },
   black: { label: "Coletes pretos", cls: "bg-zinc-500/10 text-zinc-700 border-zinc-500/20" },
   both: { label: "Coletes (2 cores)", cls: "bg-blue-500/10 text-blue-700 border-blue-500/20" },
+};
+
+const MARILIA_COORDS = {
+  latitude: -22.2139,
+  longitude: -49.9458,
+};
+
+const weatherCodeMap: Record<number, string> = {
+  0: "Céu limpo",
+  1: "Predominantemente limpo",
+  2: "Parcialmente nublado",
+  3: "Nublado",
+  45: "Névoa",
+  48: "Névoa com geada",
+  51: "Garoa fraca",
+  53: "Garoa moderada",
+  55: "Garoa intensa",
+  61: "Chuva fraca",
+  63: "Chuva moderada",
+  65: "Chuva forte",
+  71: "Neve fraca",
+  73: "Neve moderada",
+  75: "Neve forte",
+  80: "Pancadas fracas",
+  81: "Pancadas moderadas",
+  82: "Pancadas fortes",
+  95: "Trovoadas",
+  96: "Trovoadas com granizo fraco",
+  99: "Trovoadas com granizo forte",
 };
 
 function HomePage() {
@@ -71,6 +93,24 @@ function HomePage() {
     queryFn: () => getRanking({ data: { period: "all" } }),
     enabled: !!data?.me,
     staleTime: 1000 * 60 * 5,
+  });
+
+  const { data: weatherData, isLoading: weatherLoading } = useQuery({
+    queryKey: ["weather", "marilia-sp"],
+    enabled: !!data?.nextGame,
+    staleTime: 1000 * 60 * 10,
+    refetchInterval: 1000 * 60 * 10,
+    queryFn: async () => {
+      const gameDate = data?.nextGame?.date;
+      const dailyParams = gameDate
+        ? `&start_date=${gameDate}&end_date=${gameDate}`
+        : "";
+      const response = await fetch(
+        `https://api.open-meteo.com/v1/forecast?latitude=${MARILIA_COORDS.latitude}&longitude=${MARILIA_COORDS.longitude}&timezone=America%2FSao_Paulo&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min${dailyParams}`,
+      );
+      if (!response.ok) throw new Error("Erro ao carregar clima");
+      return response.json();
+    },
   });
 
   useEffect(() => {
@@ -107,23 +147,12 @@ function HomePage() {
   const confirmedList = confirmations.filter((c: any) => c.status === "confirmed");
   const result = data?.result;
 
-  const confirmedByPosition = positionGroups.reduce((acc, g) => {
-    acc[g.key] = confirmedList.filter((c: any) => {
-      const p = c.player;
-      // Group by canonical enum position; preferred_position can be custom and break grouping.
-      const pos = p?.position as string | undefined;
-      return pos === g.key;
-    });
-    return acc;
-  }, {} as Record<"goleiro" | "defensor" | "meio" | "atacante", any[]>);
-
-  const confirmedOther = confirmedList.filter((c: any) => {
-    const pos = c?.player?.position as string | undefined;
-    return pos !== "goleiro" && pos !== "defensor" && pos !== "meio" && pos !== "atacante";
-  });
-
   // Ranking do jogador logado
   const myRank = rankingData?.ranking?.find((r: any) => r.playerId === player?.id);
+  const currentWeather = weatherData?.current;
+  const gameDayMax = weatherData?.daily?.temperature_2m_max?.[0];
+  const gameDayMin = weatherData?.daily?.temperature_2m_min?.[0];
+  const weatherLabel = weatherCodeMap[Number(currentWeather?.weather_code)] ?? "Sem previsão";
 
   return (
     <div className="px-4 py-4 space-y-4 max-w-2xl mx-auto">
@@ -334,11 +363,11 @@ function HomePage() {
                 {myConf?.status === "cancelled" ? "Cancelado" : "Cancelar"}
               </Button>
             </div>
-            {/* Confirmados por posição */}
+            {/* Clima em Marília (tempo real + dia do jogo) */}
             <div className="mt-5 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">
-                  Confirmados por posição
+                  Clima em Marília - SP
                 </div>
                 <Link
                   to="/app/jogos/$id"
@@ -348,69 +377,51 @@ function HomePage() {
                   Ver detalhes <ChevronRight className="h-3 w-3" />
                 </Link>
               </div>
-
-              <div className="grid grid-cols-1 gap-2">
-                {positionGroups.map((g) => {
-                  const list = confirmedByPosition[g.key] ?? [];
-                  if (list.length === 0) return null;
-                  return (
-                    <Card key={g.key} className="p-3 bg-background/60 border border-border/60">
-                      <div className="flex items-center justify-between">
-                        <div className="text-sm font-semibold">
-                          <span className="mr-1">{g.icon}</span>
-                          {g.label}
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          ({list.length} confirmado{list.length === 1 ? "" : "s"})
-                        </div>
+              <Card className="p-3 bg-background/60 border border-border/60">
+                {weatherLoading ? (
+                  <div className="h-20 rounded-lg bg-muted animate-pulse" />
+                ) : (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="inline-flex items-center gap-1.5 min-w-0">
+                        <CloudSun className="h-4 w-4 text-sky-400 shrink-0" />
+                        <span className="text-sm font-semibold truncate">{weatherLabel}</span>
                       </div>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {list.slice(0, 10).map((c: any) => {
-                          const p = c.player;
-                          return (
-                            <div key={c.player_id} className="inline-flex items-center gap-2 rounded-full border border-border/60 bg-background px-2 py-1">
-                              <PlayerAvatar name={p?.name} src={p?.avatar_url} className="h-6 w-6" />
-                              <span className="text-xs font-medium max-w-40 truncate">{p?.name ?? "Jogador"}</span>
-                            </div>
-                          );
-                        })}
-                        {list.length > 10 ? (
-                          <div className="inline-flex items-center rounded-full border border-border/60 bg-background px-2 py-1 text-xs text-muted-foreground">
-                            +{list.length - 10}
-                          </div>
-                        ) : null}
+                      <span className="text-xs text-muted-foreground shrink-0">Tempo real</span>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      <div className="rounded-lg border border-border/60 bg-background px-2 py-1.5">
+                        <div className="text-[10px] text-muted-foreground inline-flex items-center gap-1">
+                          <Thermometer className="h-3 w-3" />
+                          Agora
+                        </div>
+                        <div className="text-sm font-semibold">{Number(currentWeather?.temperature_2m ?? 0).toFixed(1)}°C</div>
                       </div>
-                    </Card>
-                  );
-                })}
-
-                {confirmedOther.length > 0 ? (
-                  <Card className="p-3 bg-background/60 border border-border/60">
-                    <div className="flex items-center justify-between">
-                      <div className="text-sm font-semibold">Outros</div>
-                      <div className="text-xs text-muted-foreground">
-                        ({confirmedOther.length} confirmado{confirmedOther.length === 1 ? "" : "s"})
+                      <div className="rounded-lg border border-border/60 bg-background px-2 py-1.5">
+                        <div className="text-[10px] text-muted-foreground inline-flex items-center gap-1">
+                          <Droplets className="h-3 w-3" />
+                          Umidade
+                        </div>
+                        <div className="text-sm font-semibold">{Math.round(Number(currentWeather?.relative_humidity_2m ?? 0))}%</div>
+                      </div>
+                      <div className="rounded-lg border border-border/60 bg-background px-2 py-1.5">
+                        <div className="text-[10px] text-muted-foreground">Mín (jogo)</div>
+                        <div className="text-sm font-semibold">{Number(gameDayMin ?? 0).toFixed(1)}°C</div>
+                      </div>
+                      <div className="rounded-lg border border-border/60 bg-background px-2 py-1.5">
+                        <div className="text-[10px] text-muted-foreground inline-flex items-center gap-1">
+                          <Wind className="h-3 w-3" />
+                          Vento
+                        </div>
+                        <div className="text-sm font-semibold">{Math.round(Number(currentWeather?.wind_speed_10m ?? 0))} km/h</div>
                       </div>
                     </div>
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {confirmedOther.slice(0, 10).map((c: any) => {
-                        const p = c.player;
-                        return (
-                          <div key={c.player_id} className="inline-flex items-center gap-2 rounded-full border border-border/60 bg-background px-2 py-1">
-                            <PlayerAvatar name={p?.name} src={p?.avatar_url} className="h-6 w-6" />
-                            <span className="text-xs font-medium max-w-40 truncate">{p?.name ?? "Jogador"}</span>
-                          </div>
-                        );
-                      })}
-                      {confirmedOther.length > 10 ? (
-                        <div className="inline-flex items-center rounded-full border border-border/60 bg-background px-2 py-1 text-xs text-muted-foreground">
-                          +{confirmedOther.length - 10}
-                        </div>
-                      ) : null}
+                    <div className="text-[11px] text-muted-foreground">
+                      Dia do jogo: máxima prevista de <span className="font-medium text-foreground">{Number(gameDayMax ?? 0).toFixed(1)}°C</span>.
                     </div>
-                  </Card>
-                ) : null}
-              </div>
+                  </div>
+                )}
+              </Card>
             </div>
           </div>
           </Card>
