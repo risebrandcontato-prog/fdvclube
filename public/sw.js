@@ -1,4 +1,4 @@
-const CACHE_NAME = "fdv-v2";
+const CACHE_NAME = "fdv-v3";
 const STATIC_ASSETS = [
   "/",
   "/app",
@@ -8,162 +8,154 @@ const STATIC_ASSETS = [
   "/manifest.webmanifest",
 ];
 
-// ── Install: pré-cache das rotas principais ──
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
       return cache.addAll(STATIC_ASSETS);
-    }).then(() => {
-      self.skipWaiting();
-    })
+    }).then(() => self.skipWaiting())
   );
 });
 
-// ── Activate: limpa caches antigos ──
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
-        cacheNames
-          .filter((name) => name !== CACHE_NAME)
-          .map((name) => caches.delete(name))
+        cacheNames.filter((name) => name !== CACHE_NAME).map((name) => caches.delete(name))
       );
-    }).then(() => {
-      self.clients.claim();
-    })
+    }).then(() => self.clients.claim())
   );
 });
 
-// ── Fetch: estratégias por tipo ──
 self.addEventListener("fetch", (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // 1. API do Supabase → sempre rede (não cachear dados dinâmicos)
+  // During local development, don't intercept app navigation.
+  if (url.hostname === "localhost" || url.hostname === "127.0.0.1") {
+    return;
+  }
+
+  // API Supabase → sempre rede
   if (url.hostname.includes("supabase.co")) {
     event.respondWith(fetch(request));
     return;
   }
 
-  // 2. Server Functions do TanStack Start (/_server) → rede
+  // Server Functions TanStack Start → sempre rede
   if (url.pathname.startsWith("/_server")) {
     event.respondWith(fetch(request));
     return;
   }
 
-  // 3. JS Chunks (code splitting Vite) → NetworkFirst CRÍTICO
-  // Cada deploy gera hashes novos nos chunks. Se o chunk não existe,
-  // o app quebra. NetworkFirst garante que pegamos o chunk correto.
-  if (request.destination === "script" || url.pathname.match(/\/assets\/.*\.js$/)) {
+  // JS/CSS chunks → NetworkFirst
+  if (request.destination === "script" || request.destination === "style" || url.pathname.match(/\/assets\/.*\.(js|css)$/)) {
     event.respondWith(
       fetch(request)
-        .then((networkResponse) => {
-          if (networkResponse.ok) {
-            const clone = networkResponse.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+        .then((res) => {
+          if (res.ok) {
+            const clone = res.clone();
+            caches.open(CACHE_NAME).then((c) => c.put(request, clone));
           }
-          return networkResponse;
+          return res;
         })
-        .catch(() => {
-          return caches.match(request).then((cached) => {
-            if (cached) return cached;
-            // Chunk não existe mais — notifica app para reload
-            self.clients.matchAll().then((clients) => {
-              clients.forEach((client) => {
-                client.postMessage({ type: "CHUNK_MISSING", url: request.url });
-              });
-            });
-            return new Response("Chunk não encontrado", { status: 404 });
-          });
-        })
+        .catch(() => caches.match(request).then((c) => c || new Response("Chunk missing", { status: 404 })))
     );
     return;
   }
 
-  // 4. CSS → NetworkFirst (também pode ter hash no Vite)
-  if (request.destination === "style" || url.pathname.match(/\/assets\/.*\.css$/)) {
-    event.respondWith(
-      fetch(request)
-        .then((networkResponse) => {
-          if (networkResponse.ok) {
-            const clone = networkResponse.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
-          }
-          return networkResponse;
-        })
-        .catch(() => caches.match(request))
-    );
-    return;
-  }
-
-  // 5. Imagens do Supabase Storage → Cache First com fallback
-  if (url.pathname.startsWith("/storage/") || url.hostname.includes("supabase")) {
+  // Imagens/Storage → CacheFirst
+  if (request.destination === "image" || url.hostname.includes("supabase")) {
     event.respondWith(
       caches.match(request).then((cached) => {
         if (cached) return cached;
-        return fetch(request).then((response) => {
-          if (response.ok && response.status === 200) {
-            const clone = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+        return fetch(request).then((res) => {
+          if (res.ok && res.status === 200) {
+            const clone = res.clone();
+            caches.open(CACHE_NAME).then((c) => c.put(request, clone));
           }
-          return response;
+          return res;
         });
       })
     );
     return;
   }
 
-  // 6. Outras imagens/fontes → Stale While Revalidate
-  if (
-    request.destination === "font" ||
-    request.destination === "image" ||
-    url.pathname.match(/\.(png|jpg|jpeg|svg|webp|woff2?)$/)
-  ) {
-    event.respondWith(
-      caches.match(request).then((cached) => {
-        const fetchPromise = fetch(request).then((networkResponse) => {
-          if (networkResponse.ok) {
-            const clone = networkResponse.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
-          }
-          return networkResponse;
-        }).catch(() => cached);
-        return cached || fetchPromise;
-      })
-    );
-    return;
-  }
-
-  // 7. Navegação (HTML) → Network First com fallback offline
+  // Navegação (HTML) → Network First com SPA fallback somente para páginas app
   if (request.mode === "navigate") {
+    const isAppRoute = url.pathname === "/" || url.pathname.startsWith("/app") || url.pathname.startsWith("/admin");
+    if (!isAppRoute) return;
+
     event.respondWith(
       fetch(request)
-        .then((response) => {
-          const clone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
-          return response;
+        .then((res) => {
+          const clone = res.clone();
+          caches.open(CACHE_NAME).then((c) => c.put(request, clone));
+          return res;
         })
         .catch(() => {
-          return caches.match(request).then((cached) => {
+          // Fallback para SPA: serve o / para qualquer rota dinâmica
+          return caches.match("/").then((cached) => {
             if (cached) return cached;
-            return caches.match("/");
+            return new Response(
+              `<!DOCTYPE html><html><head><meta http-equiv="refresh" content="0;url=/"></head></html>`,
+              { headers: { "Content-Type": "text/html" } }
+            );
           });
         })
     );
     return;
   }
 
-  // 8. Default → cache com fallback rede
+  // Default → cache ou rede
   event.respondWith(
-    caches.match(request).then((cached) => {
-      return cached || fetch(request);
-    })
+    caches.match(request).then((cached) => cached || fetch(request))
   );
 });
 
-// ── Mensagens do cliente (update + chunk missing) ──
 self.addEventListener("message", (event) => {
-  if (event.data === "SKIP_WAITING") {
-    self.skipWaiting();
+  if (event.data === "SKIP_WAITING") self.skipWaiting();
+});
+
+self.addEventListener("push", (event) => {
+  if (!event.data) return;
+
+  let payload = {};
+  try {
+    payload = event.data.json();
+  } catch {
+    payload = { title: "Nova notificação", body: "Você recebeu uma atualização." };
   }
+
+  const title = payload.title || "FDV Clube";
+  const options = {
+    body: payload.body || "",
+    icon: payload.icon || "/icon-192x192.png",
+    badge: payload.badge || "/icon-96x96.png",
+    tag: payload.tag || "fdv-general",
+    requireInteraction: false,
+    sound: payload.sound || "/notification-sound.mp3",
+    data: {
+      url: payload.url || "/app",
+      gameId: payload.gameId || null,
+    },
+  };
+
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const targetUrl = event.notification?.data?.url || "/app";
+
+  event.waitUntil(
+    clients.matchAll({ type: "window", includeUncontrolled: true }).then((clientList) => {
+      for (const client of clientList) {
+        const clientUrl = new URL(client.url);
+        if (clientUrl.pathname === targetUrl || clientUrl.href.includes(targetUrl)) {
+          return client.focus();
+        }
+      }
+      return clients.openWindow(targetUrl);
+    }),
+  );
 });

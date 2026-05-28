@@ -2,6 +2,10 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { requireAdminAccess } from "./session.server";
+import { sendPushNotifications } from "./notifications.functions";
+import type { Database } from "@/integrations/supabase/types";
+
+type DbTables = Database["public"]["Tables"];
 
 const MAX_IMAGE_SIZE_BYTES = 6 * 1024 * 1024;
 const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp"]);
@@ -25,10 +29,36 @@ function newCode() {
   return `FDV-${s}`;
 }
 
-function getAdminId(
-  auth: Awaited<ReturnType<typeof requireAdminAccess>>
-): string | null {
+function getAdminId(auth: Awaited<ReturnType<typeof requireAdminAccess>>): string | null {
   return auth.type === "player" ? auth.player.id : null;
+}
+
+// ── Helpers de junção (flat-query pattern) ──
+
+async function fetchPlayersMap(playerIds: string[]) {
+  const uniqueIds = [...new Set(playerIds)].filter(Boolean);
+  if (uniqueIds.length === 0) return new Map<string, DbTables["players"]["Row"]>();
+
+  const { data, error } = await supabaseAdmin
+    .from("players")
+    .select("id, name, avatar_url, position, preferred_position, nickname, phone")
+    .in("id", uniqueIds);
+
+  if (error) throw new Error(error.message);
+  return new Map((data ?? []).map((p) => [p.id, p]));
+}
+
+async function fetchLocationsMap(locationIds: string[]) {
+  const uniqueIds = [...new Set(locationIds)].filter(Boolean);
+  if (uniqueIds.length === 0) return new Map<string, DbTables["locations"]["Row"]>();
+
+  const { data, error } = await supabaseAdmin
+    .from("locations")
+    .select("id, name, address, maps_url, photo_url, phone, price_per_hour, opening_hours, rating, notes")
+    .in("id", uniqueIds);
+
+  if (error) throw new Error(error.message);
+  return new Map((data ?? []).map((l) => [l.id, l]));
 }
 
 // ─────────────────────────────────────────────
@@ -38,10 +68,19 @@ export const adminListCodes = createServerFn({ method: "GET" }).handler(async ()
   await requireAdminAccess();
   const { data, error } = await supabaseAdmin
     .from("invite_codes")
-    .select("*, players!invite_codes_used_by_fk(id, name, avatar_url, is_blocked)")
+    .select("id, code, created_at, updated_at, status, is_admin, created_by, used_by")
     .order("created_at", { ascending: false });
   if (error) throw new Error(error.message);
-  return data ?? [];
+
+  const usedByIds = [...new Set((data ?? []).map((c) => c.used_by).filter(Boolean))] as string[];
+  const playersMap = await fetchPlayersMap(usedByIds);
+
+  const enriched = (data ?? []).map((c) => ({
+    ...c,
+    players: c.used_by ? (playersMap.get(c.used_by) ?? null) : null,
+  }));
+
+  return enriched;
 });
 
 export const adminGenerateCode = createServerFn({ method: "POST" }).handler(async () => {
@@ -67,6 +106,23 @@ export const adminRevokeCode = createServerFn({ method: "POST" })
       .from("invite_codes")
       .update({ status: "revoked" })
       .eq("id", data.id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const adminDeleteCode = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ data }) => {
+    await requireAdminAccess();
+
+    // Remove vínculo em players para evitar FK em players.invite_code_id
+    const { error: detachPlayersError } = await supabaseAdmin
+      .from("players")
+      .update({ invite_code_id: null })
+      .eq("invite_code_id", data.id);
+    if (detachPlayersError) throw new Error(detachPlayersError.message);
+
+    const { error } = await supabaseAdmin.from("invite_codes").delete().eq("id", data.id);
     if (error) throw new Error(error.message);
     return { ok: true };
   });
@@ -102,6 +158,47 @@ export const adminSetPlayerBlocked = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+export const adminDeletePlayer = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => z.object({ playerId: z.string().uuid() }).parse(d))
+  .handler(async ({ data }) => {
+    await requireAdminAccess();
+
+    const { data: player, error: playerReadError } = await supabaseAdmin
+      .from("players")
+      .select("id, is_admin")
+      .eq("id", data.playerId)
+      .maybeSingle();
+    if (playerReadError) throw new Error(playerReadError.message);
+    if (!player) throw new Error("Jogador não encontrado.");
+    if (player.is_admin) throw new Error("Não é permitido excluir um admin.");
+
+    // Limpeza de vínculos para exclusão permanente
+    await supabaseAdmin.from("player_sessions").delete().eq("player_id", data.playerId);
+    await supabaseAdmin.from("notifications").delete().eq("player_id", data.playerId);
+    await supabaseAdmin.from("push_subscriptions").delete().eq("player_id", data.playerId);
+    await supabaseAdmin.from("game_team_players").delete().eq("player_id", data.playerId);
+    await supabaseAdmin.from("game_player_stats").delete().eq("player_id", data.playerId);
+    await supabaseAdmin.from("payments").delete().eq("player_id", data.playerId);
+    await supabaseAdmin.from("confirmations").delete().eq("player_id", data.playerId);
+    await supabaseAdmin
+      .from("game_results")
+      .update({ mvp_player_id: null })
+      .eq("mvp_player_id", data.playerId);
+    await supabaseAdmin
+      .from("game_teams")
+      .update({ player_id: null })
+      .eq("player_id", data.playerId);
+    await supabaseAdmin
+      .from("invite_codes")
+      .update({ used_by: null, status: "pending" as any })
+      .eq("used_by", data.playerId);
+
+    const { error: playerDeleteError } = await supabaseAdmin.from("players").delete().eq("id", data.playerId);
+    if (playerDeleteError) throw new Error(playerDeleteError.message);
+
+    return { ok: true };
+  });
+
 // ─────────────────────────────────────────────
 // Locations
 // ─────────────────────────────────────────────
@@ -111,11 +208,10 @@ export const adminListLocations = createServerFn({ method: "GET" }).handler(asyn
     .from("locations")
     .select("*")
     .order("name", { ascending: true });
-  if (error) return { data: [], error: error.message };
+  if (error) return { data: [] as any[], error: error.message };
   return { data: data ?? [], error: null as string | null };
 });
 
-// Schema base para campos (reutilizado)
 const locationSchema = z.object({
   name: z.string().min(1).max(120),
   address: z.string().max(255).optional(),
@@ -133,18 +229,20 @@ export const adminCreateLocation = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     await requireAdminAccess();
     if (!data.name.trim()) throw new Error("Nome do campo é obrigatório.");
-    // Remove campos undefined/vazios antes de inserir
-    const cleanData: Record<string, any> = { name: data.name };
-    if (data.address) cleanData.address = data.address;
-    if (data.maps_url && data.maps_url !== "") cleanData.maps_url = data.maps_url;
-    if (data.photo_url && data.photo_url !== "") cleanData.photo_url = data.photo_url;
-    if (data.phone) cleanData.phone = data.phone;
-    if (data.price_per_hour != null) cleanData.price_per_hour = data.price_per_hour;
-    if (data.opening_hours) cleanData.opening_hours = data.opening_hours;
-    if (data.rating != null) cleanData.rating = data.rating;
-    if (data.notes) cleanData.notes = data.notes;
 
-    const { error } = await supabaseAdmin.from("locations").insert(cleanData);
+    const insertData: DbTables["locations"]["Insert"] = {
+      name: data.name,
+      address: data.address ?? null,
+      maps_url: data.maps_url && data.maps_url !== "" ? data.maps_url : null,
+      photo_url: data.photo_url && data.photo_url !== "" ? data.photo_url : null,
+      phone: data.phone ?? null,
+      price_per_hour: data.price_per_hour ?? null,
+      opening_hours: data.opening_hours ?? null,
+      rating: data.rating ?? null,
+      notes: data.notes ?? null,
+    };
+
+    const { error } = await supabaseAdmin.from("locations").insert(insertData);
     if (error) throw new Error(error.message);
     return { ok: true };
   });
@@ -167,7 +265,18 @@ export const adminUpdateLocation = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     await requireAdminAccess();
     const { id, ...rest } = data;
-    const { error } = await supabaseAdmin.from("locations").update(rest).eq("id", id);
+    const updateData: DbTables["locations"]["Update"] = {};
+    if (rest.name !== undefined) updateData.name = rest.name;
+    if (rest.address !== undefined) updateData.address = rest.address ?? null;
+    if (rest.maps_url !== undefined) updateData.maps_url = rest.maps_url && rest.maps_url !== "" ? rest.maps_url : null;
+    if (rest.photo_url !== undefined) updateData.photo_url = rest.photo_url && rest.photo_url !== "" ? rest.photo_url : null;
+    if (rest.phone !== undefined) updateData.phone = rest.phone ?? null;
+    if (rest.price_per_hour !== undefined) updateData.price_per_hour = rest.price_per_hour ?? null;
+    if (rest.opening_hours !== undefined) updateData.opening_hours = rest.opening_hours ?? null;
+    if (rest.rating !== undefined) updateData.rating = rest.rating ?? null;
+    if (rest.notes !== undefined) updateData.notes = rest.notes ?? null;
+
+    const { error } = await supabaseAdmin.from("locations").update(updateData).eq("id", id);
     if (error) throw new Error(error.message);
     return { ok: true };
   });
@@ -197,46 +306,34 @@ export const adminListGames = createServerFn({ method: "GET" }).handler(async ()
     throw new Error(gamesError.message);
   }
 
-  const gameList = (games ?? []) as any[];
+  const gameList = games ?? [];
+  const gameIds = gameList.map((g) => g.id);
 
-  const locationIds = [...new Set(gameList.map((g) => g.location_id).filter(Boolean))];
-  let locationsMap: Record<string, any> = {};
-  if (locationIds.length > 0) {
-    const { data: locs, error: locsError } = await supabaseAdmin
-      .from("locations")
-      .select("id, name, address, maps_url, photo_url")
-      .in("id", locationIds);
-    if (locsError) throw new Error(locsError.message);
-    if (locs) {
-      for (const loc of locs) locationsMap[loc.id] = loc;
-    }
-  }
+  const locationIds = [...new Set(gameList.map((g) => g.location_id).filter(Boolean))] as string[];
+  const locationsMap = await fetchLocationsMap(locationIds);
 
-  const enrichedGames = gameList.map((game) => ({
-    ...game,
-    locations: locationsMap[game.location_id] ?? null,
-  }));
-
-  const gameIds = enrichedGames.map((g) => g.id);
-  let resultsMap: Record<string, any> = {};
+  let resultsMap = new Map<string, DbTables["game_results"]["Row"]>();
   if (gameIds.length > 0) {
     const { data: results, error: resultsError } = await supabaseAdmin
       .from("game_results")
-      .select("*")
+      .select("id, game_id, score_a, score_b, mvp_player_id, team_a_id, team_b_id, status, notes, created_at, updated_at")
       .in("game_id", gameIds);
     if (resultsError) throw new Error(resultsError.message);
-    for (const result of results ?? []) {
-      resultsMap[result.game_id] = result;
-    }
+    resultsMap = new Map((results ?? []).map((r) => [r.game_id, r]));
   }
 
   const { data: confirmations, error: confsError } = await supabaseAdmin
     .from("confirmations")
-    .select("game_id, player_id, status");
+    .select("game_id, player_id, status")
+    .in("game_id", gameIds);
   if (confsError) throw new Error(confsError.message);
 
   return {
-    games: enrichedGames.map((g) => ({ ...g, result: resultsMap[g.id] ?? null })),
+    games: gameList.map((g) => ({
+      ...g,
+      locations: locationsMap.get(g.location_id ?? "") ?? null,
+      result: resultsMap.get(g.id) ?? null,
+    })),
     confirmations: confirmations ?? [],
   };
 });
@@ -245,6 +342,19 @@ export const adminDeleteGame = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data }) => {
     await requireAdminAccess();
+
+    const { data: gameTeams } = await supabaseAdmin
+      .from("game_teams")
+      .select("id")
+      .eq("game_id", data.id);
+    const teamIds = (gameTeams ?? []).map((t) => t.id);
+    if (teamIds.length > 0) {
+      await supabaseAdmin.from("game_team_players").delete().in("team_id", teamIds);
+    }
+
+    await supabaseAdmin.from("game_teams").delete().eq("game_id", data.id);
+    await supabaseAdmin.from("game_player_stats").delete().eq("game_id", data.id);
+    await supabaseAdmin.from("game_results").delete().eq("game_id", data.id);
     const { error: paymentsError } = await supabaseAdmin.from("payments").delete().eq("game_id", data.id);
     if (paymentsError) throw new Error(paymentsError.message);
     const { error: confError } = await supabaseAdmin
@@ -269,6 +379,12 @@ export const adminCreateGame = createServerFn({ method: "POST" })
       notes: z.string().max(500).optional(),
       has_ball: z.boolean().optional(),
       vests: z.enum(["none", "orange", "black", "both"]).optional(),
+      formation_config: z.object({
+        num_teams: z.number().int().min(2).max(3).optional(),
+        players_per_team: z.number().int().min(1).optional(),
+        formation_desc: z.string().optional(),
+      }).optional(),
+      auto_draw: z.boolean().optional(),
     }).parse(d),
   )
   .handler(async ({ data }) => {
@@ -282,9 +398,23 @@ export const adminCreateGame = createServerFn({ method: "POST" })
       throw new Error("Número de jogadores inválido.");
     }
 
+    const insertData: DbTables["games"]["Insert"] = {
+      title: data.title,
+      date: data.date,
+      time: data.time,
+      location_id: data.location_id ?? null,
+      max_players: data.max_players,
+      contribution_amount: data.contribution_amount,
+      notes: data.notes ?? null,
+      has_ball: data.has_ball ?? false,
+      vests: data.vests ?? "none",
+      formation_config: data.formation_config ?? null,
+      auto_draw: data.auto_draw ?? false,
+    };
+
     const { data: game, error } = await supabaseAdmin
       .from("games")
-      .insert(data)
+      .insert(insertData)
       .select("id")
       .single();
     if (error || !game) throw new Error(error?.message ?? "Falha ao criar jogo");
@@ -305,6 +435,16 @@ export const adminCreateGame = createServerFn({ method: "POST" })
       );
       if (paymentsError) throw new Error(paymentsError.message);
     }
+
+    // Best-effort push: não bloqueia fluxo principal
+    void sendPushNotifications({
+      data: {
+        title: "⚽ Novo jogo marcado!",
+        body: `${data.title} — ${data.date} às ${data.time}. Confirma presença!`,
+        url: "/app/jogos",
+      },
+    }).catch(() => {});
+
     return { ok: true, id: game.id };
   });
 
@@ -321,6 +461,12 @@ export const adminUpdateGame = createServerFn({ method: "POST" })
       status: z.enum(["scheduled", "cancelled", "done"]).optional(),
       has_ball: z.boolean().optional(),
       vests: z.enum(["none", "orange", "black", "both"]).optional(),
+      formation_config: z.object({
+        num_teams: z.number().int().min(2).max(3).optional(),
+        players_per_team: z.number().int().min(1).optional(),
+        formation_desc: z.string().optional(),
+      }).optional(),
+      auto_draw: z.boolean().optional(),
     }).parse(d),
   )
   .handler(async ({ data }) => {
@@ -331,7 +477,21 @@ export const adminUpdateGame = createServerFn({ method: "POST" })
     if (rest.max_players !== undefined && (!Number.isInteger(rest.max_players) || rest.max_players < 1)) {
       throw new Error("Número de jogadores inválido.");
     }
-    const { error } = await supabaseAdmin.from("games").update(rest).eq("id", id);
+
+    const updateData: DbTables["games"]["Update"] = {};
+    if (rest.title !== undefined) updateData.title = rest.title;
+    if (rest.date !== undefined) updateData.date = rest.date;
+    if (rest.time !== undefined) updateData.time = rest.time;
+    if (rest.location_id !== undefined) updateData.location_id = rest.location_id ?? null;
+    if (rest.max_players !== undefined) updateData.max_players = rest.max_players;
+    if (rest.notes !== undefined) updateData.notes = rest.notes ?? null;
+    if (rest.status !== undefined) updateData.status = rest.status;
+    if (rest.has_ball !== undefined) updateData.has_ball = rest.has_ball;
+    if (rest.vests !== undefined) updateData.vests = rest.vests;
+    if (rest.formation_config !== undefined) updateData.formation_config = rest.formation_config ?? null;
+    if (rest.auto_draw !== undefined) updateData.auto_draw = rest.auto_draw;
+
+    const { error } = await supabaseAdmin.from("games").update(updateData).eq("id", id);
     if (error) throw new Error(error.message);
     return { ok: true };
   });
@@ -361,40 +521,54 @@ export const adminGameDetail = createServerFn({ method: "POST" })
 
     const { data: players, error: playersError } = await supabaseAdmin
       .from("players")
-      .select("id, name, avatar_url, position, jersey_number, preferred_foot, is_blocked")
+      .select("id, name, avatar_url, position, jersey_number, preferred_foot, is_blocked, phone, nickname, preferred_position, secondary_position, strong_foot")
       .order("name");
     if (playersError) throw new Error(playersError.message);
 
     const { data: confs, error: confsError } = await supabaseAdmin
       .from("confirmations")
-      .select("*")
+      .select("id, game_id, player_id, status, confirmation_order, notes, created_at, updated_at")
       .eq("game_id", data.id);
     if (confsError) throw new Error(confsError.message);
 
     const { data: payments, error: paymentsError } = await supabaseAdmin
       .from("payments")
-      .select("*")
+      .select("id, game_id, player_id, amount, status, paid_at, notes, proof_url, approved_by_admin_at, admin_notes, created_at, updated_at")
       .eq("game_id", data.id);
     if (paymentsError) throw new Error(paymentsError.message);
 
     const { data: stats, error: statsError } = await supabaseAdmin
       .from("game_player_stats")
-      .select("*")
+      .select("id, game_id, player_id, goals, assists, own_goals, saves, yellow_cards, red_cards, rating, notes, created_at, updated_at")
       .eq("game_id", data.id);
     if (statsError) throw new Error(statsError.message);
 
     const { data: result, error: resultError } = await supabaseAdmin
       .from("game_results")
-      .select("*")
+      .select("id, game_id, score_a, score_b, mvp_player_id, team_a_id, team_b_id, status, notes, created_at, updated_at")
       .eq("game_id", data.id)
       .maybeSingle();
     if (resultError) throw new Error(resultError.message);
 
     const { data: teams, error: teamsError } = await supabaseAdmin
       .from("game_teams")
-      .select("id, game_id, team_name, color")
+      .select("id, game_id, team_name, color, jersey_color, player_id, created_at")
       .eq("game_id", data.id);
     if (teamsError) throw new Error(teamsError.message);
+
+    let teamPlayersMap: Record<string, string[]> = {};
+    if (teams && teams.length > 0) {
+      const teamIds = teams.map((t) => t.id);
+      const { data: teamPlayers, error: tpError } = await supabaseAdmin
+        .from("game_team_players")
+        .select("team_id, player_id")
+        .in("team_id", teamIds);
+      if (tpError) throw new Error(tpError.message);
+      for (const tp of teamPlayers ?? []) {
+        if (!teamPlayersMap[tp.team_id]) teamPlayersMap[tp.team_id] = [];
+        teamPlayersMap[tp.team_id].push(tp.player_id);
+      }
+    }
 
     return {
       game,
@@ -404,10 +578,13 @@ export const adminGameDetail = createServerFn({ method: "POST" })
       payments: payments ?? [],
       stats: stats ?? [],
       result: result ?? null,
-      teams: teams ?? [],
+      teams: (teams ?? []).map((t) => ({ ...t, player_ids: teamPlayersMap[t.id] ?? [] })),
     };
   });
 
+// ─────────────────────────────────────────────
+// Estatísticas (apenas stats individuais — NÃO toca em game_results)
+// ─────────────────────────────────────────────
 export const saveGameStats = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) =>
     z
@@ -431,7 +608,7 @@ export const saveGameStats = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     await requireAdminAccess();
 
-    const payload = data.stats.map((s) => ({
+    const payload: DbTables["game_player_stats"]["Insert"][] = data.stats.map((s) => ({
       game_id: data.gameId,
       player_id: s.playerId,
       goals: s.goals,
@@ -441,6 +618,7 @@ export const saveGameStats = createServerFn({ method: "POST" })
       red_cards: s.red_cards,
       rating: s.rating ?? null,
       notes: s.notes ?? null,
+      saves: 0,
       updated_at: new Date().toISOString(),
     }));
 
@@ -449,96 +627,200 @@ export const saveGameStats = createServerFn({ method: "POST" })
       .upsert(payload, { onConflict: "game_id,player_id" });
     if (upsertError) throw new Error(upsertError.message);
 
-    const { data: teams, error: teamsError } = await supabaseAdmin
-      .from("game_teams")
-      .select("id, team_name")
-      .eq("game_id", data.gameId)
-      .order("created_at", { ascending: true });
-    if (teamsError) throw new Error(teamsError.message);
-
-    let scoreA = 0;
-    let scoreB = 0;
-    let teamAId: string | null = null;
-    let teamBId: string | null = null;
-
-    if ((teams ?? []).length >= 2) {
-      const [teamA, teamB] = teams as Array<{ id: string; team_name: string }>;
-      teamAId = teamA.id;
-      teamBId = teamB.id;
-
-      const { data: teamPlayers, error: teamPlayersError } = await supabaseAdmin
-        .from("game_team_players")
-        .select("team_id, player_id")
-        .in("team_id", [teamA.id, teamB.id]);
-      if (teamPlayersError) throw new Error(teamPlayersError.message);
-
-      const teamAPlayers = new Set((teamPlayers ?? []).filter((tp) => tp.team_id === teamA.id).map((tp) => tp.player_id));
-      const teamBPlayers = new Set((teamPlayers ?? []).filter((tp) => tp.team_id === teamB.id).map((tp) => tp.player_id));
-
-      for (const stat of payload) {
-        const totalGoals = Number(stat.goals ?? 0);
-        const ownGoals = Number(stat.own_goals ?? 0);
-        if (teamAPlayers.has(stat.player_id)) {
-          scoreA += totalGoals;
-          scoreB += ownGoals;
-        } else if (teamBPlayers.has(stat.player_id)) {
-          scoreB += totalGoals;
-          scoreA += ownGoals;
-        }
-      }
-    } else {
-      scoreA = payload.reduce((sum, row) => sum + Number(row.goals ?? 0), 0);
-      scoreB = 0;
-    }
-
-    const sortedByGoals = [...payload].sort((a, b) => b.goals - a.goals);
-    const topScorer = sortedByGoals[0];
-    const sortedByRating = [...payload]
-      .filter((row) => row.rating !== null && row.rating !== undefined)
-      .sort((a, b) => Number(b.rating) - Number(a.rating));
-    const mvp = sortedByRating[0];
-
-    const notes = [
-      topScorer && topScorer.goals > 0 ? `Artilheiro do jogo: ${topScorer.goals} gol(s)` : null,
-    ]
-      .filter(Boolean)
-      .join(" | ");
-
-    const { error: resultError } = await supabaseAdmin
-      .from("game_results")
-      .upsert(
-        {
-          game_id: data.gameId,
-          team_a_id: teamAId,
-          team_b_id: teamBId,
-          score_a: scoreA,
-          score_b: scoreB,
-          status: "finished",
-          mvp_player_id: mvp?.player_id ?? null,
-          notes: notes || null,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "game_id" },
-      );
-    if (resultError) throw new Error(resultError.message);
-
     return { success: true, error: null as string | null };
   });
 
+// ─────────────────────────────────────────────
+// Team Drawing (Sorteio de Times)
+// ─────────────────────────────────────────────
+export const generateTeams = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) =>
+    z.object({
+      gameId: z.string().uuid(),
+      numTeams: z.number().int().min(2).max(3).default(2),
+    }).parse(d),
+  )
+  .handler(async ({ data }) => {
+    await requireAdminAccess();
+
+    const { data: confs, error: confsError } = await supabaseAdmin
+      .from("confirmations")
+      .select("player_id")
+      .eq("game_id", data.gameId)
+      .eq("status", "confirmed")
+      .order("confirmation_order", { ascending: true });
+    if (confsError) throw new Error(confsError.message);
+
+    const playerIds = (confs ?? []).map((c) => c.player_id);
+    const playersMap = await fetchPlayersMap(playerIds);
+
+    const players = playerIds.map((id) => ({
+      id,
+      name: playersMap.get(id)?.name ?? "Jogador",
+      position: String(playersMap.get(id)?.preferred_position ?? playersMap.get(id)?.position ?? "").toLowerCase(),
+    }));
+
+    if (players.length === 0) throw new Error("Nenhum jogador confirmado para sortear times.");
+
+    // Use seed por jogo para manter sorteio estável por jogo (até refazer times).
+    function hashSeed(value: string) {
+      let h = 2166136261;
+      for (let i = 0; i < value.length; i++) {
+        h ^= value.charCodeAt(i);
+        h = Math.imul(h, 16777619);
+      }
+      return h >>> 0;
+    }
+    function rngFactory(seed: number) {
+      let t = seed + 0x6d2b79f5;
+      return () => {
+        t += 0x6d2b79f5;
+        let r = Math.imul(t ^ (t >>> 15), 1 | t);
+        r ^= r + Math.imul(r ^ (r >>> 7), 61 | r);
+        return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+      };
+    }
+    function shuffleWithRng<T>(arr: T[], rand: () => number) {
+      const out = [...arr];
+      for (let i = out.length - 1; i > 0; i--) {
+        const j = Math.floor(rand() * (i + 1));
+        [out[i], out[j]] = [out[j], out[i]];
+      }
+      return out;
+    }
+    function isGoalkeeper(pos: string) {
+      return pos.includes("goleiro") || pos.includes("goalkeeper") || pos === "gk";
+    }
+
+    const seed = hashSeed(data.gameId);
+    const rand = rngFactory(seed);
+
+    const requestedTeams = data.numTeams;
+    const autoTeams = players.length >= 18 ? 3 : 2;
+    const teamCount = Math.max(2, Math.min(3, requestedTeams ?? autoTeams));
+
+    const goalkeepers = shuffleWithRng(players.filter((p) => isGoalkeeper(p.position)), rand);
+    const linePlayers = shuffleWithRng(players.filter((p) => !isGoalkeeper(p.position)), rand);
+
+    // Deletar times existentes
+    const { data: existingTeams } = await supabaseAdmin
+      .from("game_teams")
+      .select("id")
+      .eq("game_id", data.gameId);
+    const existingTeamIds = (existingTeams ?? []).map((t) => t.id);
+    if (existingTeamIds.length > 0) {
+      await supabaseAdmin.from("game_team_players").delete().in("team_id", existingTeamIds);
+    }
+    await supabaseAdmin.from("game_teams").delete().eq("game_id", data.gameId);
+
+    const colors = ["#22c55e", "#ef4444", "#3b82f6"];
+    const teamNames = ["Time A", "Time B", "Time C"];
+    const createdTeams: Array<{ id: string; name: string; color: string; players: typeof players }> = [];
+    const distributedPlayers: Array<typeof players> = Array.from({ length: teamCount }, () => []);
+
+    // 1) Distribui goleiros primeiro (1 por time quando possível)
+    for (let i = 0; i < goalkeepers.length; i++) {
+      distributedPlayers[i % teamCount].push(goalkeepers[i]);
+    }
+    // 2) Distribui linha em snake draft para balancear sobra
+    for (let i = 0; i < linePlayers.length; i++) {
+      const round = Math.floor(i / teamCount);
+      const offset = i % teamCount;
+      const teamIndex = round % 2 === 0 ? offset : teamCount - 1 - offset;
+      distributedPlayers[teamIndex].push(linePlayers[i]);
+    }
+
+    for (let i = 0; i < teamCount; i++) {
+      const captainId = distributedPlayers[i]?.[0]?.id ?? players[0]?.id ?? "";
+
+      const { data: team, error: teamError } = await supabaseAdmin
+        .from("game_teams")
+        .insert({ 
+          game_id: data.gameId, 
+          team_name: teamNames[i],
+          color: colors[i],
+          player_id: captainId || null,
+        })
+        .select("id")
+        .single();
+      if (teamError || !team) throw new Error(teamError?.message ?? "Erro ao criar time");
+      createdTeams.push({ id: team.id, name: teamNames[i], color: colors[i], players: [] });
+    }
+
+    for (let teamIndex = 0; teamIndex < createdTeams.length; teamIndex++) {
+      const team = createdTeams[teamIndex];
+      for (const player of distributedPlayers[teamIndex]) {
+        team.players.push(player);
+        const { error: tpError } = await supabaseAdmin
+          .from("game_team_players")
+          .insert({ team_id: team.id, player_id: player.id });
+        if (tpError) throw new Error(tpError.message);
+      }
+    }
+
+    void sendPushNotifications({
+      data: {
+        title: "🎲 Times sorteados!",
+        body: "Os times do próximo jogo foram definidos. Veja qual é o seu!",
+        url: `/app/jogos/${data.gameId}`,
+        gameId: data.gameId,
+      },
+    }).catch(() => {});
+
+    return { success: true, teams: createdTeams };
+  });
+
+export const deleteTeams = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => z.object({ gameId: z.string().uuid() }).parse(d))
+  .handler(async ({ data }) => {
+    await requireAdminAccess();
+
+    const { data: gameTeams } = await supabaseAdmin
+      .from("game_teams")
+      .select("id")
+      .eq("game_id", data.gameId);
+    const teamIds = (gameTeams ?? []).map((t) => t.id);
+    if (teamIds.length > 0) {
+      await supabaseAdmin.from("game_team_players").delete().in("team_id", teamIds);
+    }
+
+    await supabaseAdmin.from("game_teams").delete().eq("game_id", data.gameId);
+    return { ok: true };
+  });
+
+// ─────────────────────────────────────────────
+// Confirmations
+// ─────────────────────────────────────────────
 export const adminSetConfirmation = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) =>
     z.object({
       gameId: z.string().uuid(),
       playerId: z.string().uuid(),
-      status: z.enum(["confirmed", "cancelled", "pending"]),
+      status: z.enum(["confirmed", "cancelled"]),
     }).parse(d),
   )
   .handler(async ({ data }) => {
     await requireAdminAccess();
+
+    const { data: existing } = await supabaseAdmin
+      .from("confirmations")
+      .select("confirmation_order")
+      .eq("game_id", data.gameId)
+      .order("confirmation_order", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const nextOrder = (existing?.confirmation_order ?? 0) + 1;
+
     const { error } = await supabaseAdmin
       .from("confirmations")
       .upsert(
-        { game_id: data.gameId, player_id: data.playerId, status: data.status },
+        {
+          game_id: data.gameId,
+          player_id: data.playerId,
+          status: data.status,
+          confirmation_order: data.status === "confirmed" ? nextOrder : null,
+        },
         { onConflict: "game_id, player_id" },
       );
     if (error) throw new Error(error.message);
@@ -560,16 +842,21 @@ export const adminSetPayment = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     await requireAdminAccess();
-    const patch: Record<string, unknown> = { status: data.status };
+    const patch: DbTables["payments"]["Update"] = { status: data.status };
     if (data.amount !== undefined) patch.amount = data.amount;
     if (data.notes !== undefined) patch.notes = data.notes;
-    if (data.status === "paid") patch.paid_at = new Date().toISOString();
-    else patch.paid_at = null;
+    if (data.status === "paid") {
+      patch.paid_at = new Date().toISOString();
+      patch.approved_by_admin_at = new Date().toISOString();
+    } else {
+      patch.paid_at = null;
+      patch.approved_by_admin_at = null;
+    }
 
     const { error } = await supabaseAdmin
       .from("payments")
       .upsert(
-        { game_id: data.gameId, player_id: data.playerId, ...patch },
+        { game_id: data.gameId, player_id: data.playerId, ...patch } as DbTables["payments"]["Insert"],
         { onConflict: "game_id, player_id" },
       );
     if (error) throw new Error(error.message);
@@ -600,13 +887,46 @@ export const playerConfirmGame = createServerFn({ method: "POST" })
 
     if (!session) throw new Error("Sessão inválida");
 
+    const { data: existing } = await supabaseAdmin
+      .from("confirmations")
+      .select("confirmation_order")
+      .eq("game_id", data.gameId)
+      .order("confirmation_order", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const nextOrder = (existing?.confirmation_order ?? 0) + 1;
+
     const { error } = await supabaseAdmin
       .from("confirmations")
       .upsert(
-        { game_id: data.gameId, player_id: session.player_id, status: data.status },
+        {
+          game_id: data.gameId,
+          player_id: session.player_id,
+          status: data.status,
+          confirmation_order: data.status === "confirmed" ? nextOrder : null,
+        },
         { onConflict: "game_id, player_id" },
       );
     if (error) throw new Error(error.message);
+
+    const { data: game } = await supabaseAdmin
+      .from("games")
+      .select("max_players, auto_draw")
+      .eq("id", data.gameId)
+      .maybeSingle();
+
+    if (game?.auto_draw && data.status === "confirmed") {
+      const { data: confs } = await supabaseAdmin
+        .from("confirmations")
+        .select("id")
+        .eq("game_id", data.gameId)
+        .eq("status", "confirmed");
+      if (confs && confs.length >= game.max_players) {
+        // Auto-draw trigger (implementar se necessário)
+      }
+    }
+
     return { ok: true };
   });
 
@@ -698,6 +1018,66 @@ export const uploadFieldPhoto = createServerFn({ method: "POST" })
   });
 
 // ─────────────────────────────────────────────
+// Resultado do jogo (placar + MVP)
+// ─────────────────────────────────────────────
+export const adminSetResult = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) =>
+    z.object({
+      gameId: z.string().uuid(),
+      score_a: z.number().int().min(0),
+      score_b: z.number().int().min(0),
+      mvp_id: z.string().uuid().nullable().optional(),
+    }).parse(d),
+  )
+  .handler(async ({ data }) => {
+    await requireAdminAccess();
+
+    const { data: teams } = await supabaseAdmin
+      .from("game_teams")
+      .select("id")
+      .eq("game_id", data.gameId)
+      .order("created_at", { ascending: true });
+
+    const teamAId = teams?.[0]?.id ?? null;
+    const teamBId = teams?.[1]?.id ?? null;
+
+    const { data: existing } = await supabaseAdmin
+      .from("game_results")
+      .select("id")
+      .eq("game_id", data.gameId)
+      .maybeSingle();
+
+    const payload = {
+      game_id: data.gameId,
+      score_a: data.score_a,
+      score_b: data.score_b,
+      mvp_player_id: data.mvp_id ?? null,
+      team_a_id: teamAId,
+      team_b_id: teamBId,
+      status: "finished",
+      updated_at: new Date().toISOString(),
+    };
+
+    if (existing) {
+      const { error } = await supabaseAdmin
+        .from("game_results")
+        .update(payload)
+        .eq("id", existing.id);
+      if (error) throw new Error(error.message);
+    } else {
+      const { error } = await supabaseAdmin.from("game_results").insert(payload);
+      if (error) throw new Error(error.message);
+    }
+
+    await supabaseAdmin
+      .from("games")
+      .update({ status: "done", updated_at: new Date().toISOString() })
+      .eq("id", data.gameId);
+
+    return { success: true };
+  });
+
+// ─────────────────────────────────────────────
 // Dashboard
 // ─────────────────────────────────────────────
 export const adminDashboard = createServerFn({ method: "GET" }).handler(async () => {
@@ -705,7 +1085,7 @@ export const adminDashboard = createServerFn({ method: "GET" }).handler(async ()
   const today = new Date().toISOString().slice(0, 10);
   const { data: nextGame } = await supabaseAdmin
     .from("games")
-    .select("*, locations(name)")
+    .select("*")
     .gte("date", today)
     .eq("status", "scheduled")
     .order("date", { ascending: true })

@@ -1,7 +1,6 @@
 import { createFileRoute, Outlet, useNavigate, useLocation } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { ArrowLeft, Shield, LogOut } from "lucide-react";
-import { BottomNav } from "@/components/BottomNav";
 import { checkAdminToken } from "@/lib/admin.auth";
 import { clearStoredToken } from "@/lib/session-client";
 
@@ -93,7 +92,6 @@ function AdminLayout() {
         <Outlet />
       </div>
 
-      <BottomNav />
     </div>
   );
 }

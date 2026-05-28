@@ -1,14 +1,28 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
-import { Copy, Plus, Ban } from "lucide-react";
+import { Copy, Plus, Ban, Trash2 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { adminListCodes, adminGenerateCode, adminRevokeCode } from "@/lib/admin.functions";
+import { adminListCodes, adminGenerateCode, adminRevokeCode, adminDeleteCode } from "@/lib/admin.functions";
 
 export const Route = createFileRoute("/admin/codigos")({
   component: CodigosPage,
+  loader: async ({ context: { queryClient } }) => {
+    try {
+      await queryClient.ensureQueryData({
+        queryKey: ["admin-codes"],
+        queryFn: () => adminListCodes(),
+        staleTime: 1000 * 60 * 5,
+      });
+    } catch (error) {
+      if (error instanceof Error && error.message === "UNAUTHENTICATED") {
+        throw redirect({ to: "/admin/login" });
+      }
+      throw error;
+    }
+  },
 });
 
 const statusMap: Record<string, { label: string; cls: string }> = {
@@ -22,6 +36,7 @@ function CodigosPage() {
   const list = useServerFn(adminListCodes);
   const gen = useServerFn(adminGenerateCode);
   const revoke = useServerFn(adminRevokeCode);
+  const deleteCode = useServerFn(adminDeleteCode);
   const qc = useQueryClient();
   const { data } = useQuery({ queryKey: ["admin-codes"], queryFn: () => list() });
 
@@ -44,6 +59,15 @@ function CodigosPage() {
       await revoke({ data: { id } });
       qc.invalidateQueries({ queryKey: ["admin-codes"] });
     } catch (e) { toast.error(e instanceof Error ? e.message : "Erro"); }
+  }
+
+  async function doDelete(id: string) {
+    if (!confirm("Excluir código permanentemente do banco?")) return;
+    try {
+      await deleteCode({ data: { id } });
+      toast.success("Código excluído permanentemente.");
+      qc.invalidateQueries({ queryKey: ["admin-codes"] });
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Erro ao excluir código"); }
   }
 
   return (
@@ -76,6 +100,9 @@ function CodigosPage() {
                     <Ban className="h-4 w-4 text-destructive" />
                   </Button>
                 ) : null}
+                <Button size="icon" variant="ghost" onClick={() => doDelete(c.id)}>
+                  <Trash2 className="h-4 w-4 text-destructive" />
+                </Button>
               </div>
             </Card>
           );

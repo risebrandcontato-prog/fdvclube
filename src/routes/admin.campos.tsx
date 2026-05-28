@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useState, useRef, useCallback } from "react";
@@ -40,6 +40,20 @@ import { prepareImageForUpload } from "@/lib/image-upload";
 
 export const Route = createFileRoute("/admin/campos")({
   component: CamposAdminPage,
+  loader: async ({ context: { queryClient } }) => {
+    try {
+      await queryClient.ensureQueryData({
+        queryKey: ["admin-locations"],
+        queryFn: () => adminListLocations(),
+        staleTime: 30_000,
+      });
+    } catch (error) {
+      if (error instanceof Error && error.message === "UNAUTHENTICATED") {
+        throw redirect({ to: "/admin/login" });
+      }
+      throw error;
+    }
+  },
 });
 
 function CamposAdminPage() {

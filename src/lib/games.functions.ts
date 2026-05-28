@@ -2,10 +2,10 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { requirePlayer } from "./session.server";
+import type { Database } from "@/integrations/supabase/types";
 
-// ─────────────────────────────────────────────
-// Types
-// ─────────────────────────────────────────────
+type DbTables = Database["public"]["Tables"];
+
 export interface Location {
   id: string;
   name: string;
@@ -20,10 +20,39 @@ export interface Location {
   created_at: string;
 }
 
+// ── Helpers de junção (flat-query pattern) ──
+
+async function fetchPlayersMap(playerIds: string[]) {
+  const uniqueIds = [...new Set(playerIds)].filter(Boolean);
+  if (uniqueIds.length === 0) return new Map<string, DbTables["players"]["Row"]>();
+
+  const { data, error } = await supabaseAdmin
+    .from("players")
+    .select("id, name, avatar_url, position, preferred_position, nickname, phone")
+    .in("id", uniqueIds);
+
+  if (error) throw new Error(error.message);
+  return new Map((data ?? []).map((p) => [p.id, p]));
+}
+
+async function fetchLocationsMap(locationIds: string[]) {
+  const uniqueIds = [...new Set(locationIds)].filter(Boolean);
+  if (uniqueIds.length === 0) return new Map<string, DbTables["locations"]["Row"]>();
+
+  const { data, error } = await supabaseAdmin
+    .from("locations")
+    .select("id, name, address, maps_url, photo_url, phone, price_per_hour, opening_hours, rating, notes")
+    .in("id", uniqueIds);
+
+  if (error) throw new Error(error.message);
+  return new Map((data ?? []).map((l) => [l.id, l]));
+}
+
+// ── Server Functions ──
+
 export const listGames = createServerFn({ method: "GET" }).handler(async () => {
   const me = await requirePlayer();
 
-  // 1. Busca todos os jogos
   const { data: games, error: gamesError } = await supabaseAdmin
     .from("games")
     .select("*")
@@ -34,75 +63,57 @@ export const listGames = createServerFn({ method: "GET" }).handler(async () => {
     throw new Error(gamesError.message);
   }
 
-  const gameList = (games ?? []) as any[];
+  const gameList = games ?? [];
+  const gameIds = gameList.map((g) => g.id);
+  if (gameIds.length === 0) return { games: [], error: null as string | null };
 
-  // 2. Busca locations separadamente
-  const locationIds = [...new Set(gameList.map((g) => g.location_id).filter(Boolean))];
-  let locationsMap: Record<string, any> = {};
-  if (locationIds.length > 0) {
-    const { data: locs, error: locationsError } = await supabaseAdmin
-      .from("locations")
-      .select("id, name, address, maps_url, photo_url")
-      .in("id", locationIds);
-    if (locationsError) {
-      return { games: [], error: locationsError.message };
-    }
-    if (locs) {
-      for (const loc of locs) locationsMap[loc.id] = loc;
-    }
-  }
+  const locationIds = [...new Set(gameList.map((g) => g.location_id).filter(Boolean))] as string[];
+  const locationsMap = await fetchLocationsMap(locationIds);
 
-  // 3. Busca todas as confirmações
   const { data: confirmations, error: confError } = await supabaseAdmin
     .from("confirmations")
-    .select("game_id, player_id, status, players(id, name, avatar_url, position)")
-    .order("created_at", { ascending: true });
-  if (confError) {
-    return { games: [], error: confError.message };
-  }
+    .select("id, game_id, player_id, status, confirmation_order, notes, created_at")
+    .in("game_id", gameIds);
+  if (confError) throw new Error(confError.message);
 
-  // 4. Busca todos os pagamentos do jogador logado
+  const confPlayerIds = [...new Set((confirmations ?? []).map((c) => c.player_id))];
+  const confPlayersMap = await fetchPlayersMap(confPlayerIds);
+
+  const confirmationsWithPlayers = (confirmations ?? []).map((c) => ({
+    ...c,
+    player: confPlayersMap.get(c.player_id) ?? null,
+  }));
+
   const { data: myPayments, error: paymentsError } = await supabaseAdmin
     .from("payments")
-    .select("game_id, player_id, amount, status, paid_at, notes")
-    .eq("player_id", me.id);
-  if (paymentsError) {
-    return { games: [], error: paymentsError.message };
-  }
+    .select("id, game_id, player_id, amount, status, paid_at, notes, proof_url, approved_by_admin_at, admin_notes")
+    .eq("player_id", me.id)
+    .in("game_id", gameIds);
+  if (paymentsError) throw new Error(paymentsError.message);
 
-  const myPaymentsMap: Record<string, any> = {};
-  for (const p of myPayments ?? []) {
-    myPaymentsMap[p.game_id] = p;
-  }
+  const myPaymentsMap = new Map((myPayments ?? []).map((p) => [p.game_id, p]));
 
-  // 5. Monta os jogos enriquecidos
+  const { data: results, error: resultsError } = await supabaseAdmin
+    .from("game_results")
+    .select("id, game_id, score_a, score_b, mvp_player_id, team_a_id, team_b_id, status, notes, created_at, updated_at")
+    .in("game_id", gameIds);
+  if (resultsError) throw new Error(resultsError.message);
+
+  const resultsMap = new Map((results ?? []).map((r) => [r.game_id, r]));
+
   const enrichedGames = gameList.map((game) => {
-    const gameConfs = (confirmations ?? []).filter((c: any) => c.game_id === game.id);
+    const gameConfs = confirmationsWithPlayers.filter((c) => c.game_id === game.id);
     return {
       ...game,
-      locations: locationsMap[game.location_id] ?? null,
+      location: locationsMap.get(game.location_id ?? "") ?? null,
       confirmations: gameConfs,
-      payments: myPaymentsMap[game.id] ? [myPaymentsMap[game.id]] : [],
+      myPayment: myPaymentsMap.get(game.id) ?? null,
+      result: resultsMap.get(game.id) ?? null,
     };
   });
 
-  const gameIds = enrichedGames.map((g) => g.id);
-  let resultsMap: Record<string, any> = {};
-  if (gameIds.length > 0) {
-    const { data: results, error: resultsError } = await supabaseAdmin
-      .from("game_results")
-      .select("*")
-      .in("game_id", gameIds);
-    if (resultsError) {
-      return { games: [], error: resultsError.message };
-    }
-    for (const row of results ?? []) {
-      resultsMap[row.game_id] = row;
-    }
-  }
-
   return {
-    games: enrichedGames.map((g) => ({ ...g, result: resultsMap[g.id] ?? null })),
+    games: enrichedGames,
     error: null as string | null,
   };
 });
@@ -119,39 +130,119 @@ export const getGameDetail = createServerFn({ method: "POST" })
       .maybeSingle();
     if (gameError) throw new Error(gameError.message);
 
-    if (!game) return { game: null, confirmations: [], myPayment: null, location: null };
+    if (!game) {
+      return {
+        game: null,
+        location: null,
+        confirmations: [],
+        myPayment: null,
+        teams: [],
+        stats: [],
+        result: null,
+      };
+    }
 
     const { data: location, error: locationError } = game.location_id
       ? await supabaseAdmin
           .from("locations")
-          .select("id, name, address, maps_url, photo_url")
+          .select("id, name, address, maps_url, photo_url, phone, price_per_hour, opening_hours, rating, notes")
           .eq("id", game.location_id)
           .maybeSingle()
       : { data: null, error: null };
     if (locationError) throw new Error(locationError.message);
 
-    const { data: confs, error: confError } = await supabaseAdmin
+    const { data: confirmations, error: confError } = await supabaseAdmin
       .from("confirmations")
-      .select("status, player_id, players(id, name, avatar_url, position)")
+      .select("id, game_id, player_id, status, confirmation_order, notes, created_at")
       .eq("game_id", data.id);
     if (confError) throw new Error(confError.message);
 
+    const confPlayerIds = [...new Set((confirmations ?? []).map((c) => c.player_id))];
+    const confPlayersMap = await fetchPlayersMap(confPlayerIds);
+
+    const confirmationsWithPlayers = (confirmations ?? []).map((c) => ({
+      ...c,
+      player: confPlayersMap.get(c.player_id) ?? null,
+    }));
+
     const { data: myPayment, error: paymentError } = await supabaseAdmin
       .from("payments")
-      .select("*")
+      .select("id, game_id, player_id, amount, status, paid_at, notes, proof_url, approved_by_admin_at, admin_notes")
       .eq("game_id", data.id)
       .eq("player_id", me.id)
       .maybeSingle();
     if (paymentError) throw new Error(paymentError.message);
 
-    return { game, confirmations: confs ?? [], myPayment, location };
+    const { data: teams, error: teamsError } = await supabaseAdmin
+      .from("game_teams")
+      .select("id, game_id, team_name, color, jersey_color, player_id, created_at")
+      .eq("game_id", data.id);
+    if (teamsError) throw new Error(teamsError.message);
+
+    const teamIds = (teams ?? []).map((t) => t.id);
+    let teamPlayersMap: Record<string, Array<{ player_id: string; player: DbTables["players"]["Row"] | null }>> = {};
+
+    if (teamIds.length > 0) {
+      const { data: teamPlayers, error: tpError } = await supabaseAdmin
+        .from("game_team_players")
+        .select("id, team_id, player_id, created_at")
+        .in("team_id", teamIds);
+      if (tpError) throw new Error(tpError.message);
+
+      const tpPlayerIds = [...new Set((teamPlayers ?? []).map((tp) => tp.player_id))];
+      const tpPlayersMap = await fetchPlayersMap(tpPlayerIds);
+
+      for (const tp of teamPlayers ?? []) {
+        if (!teamPlayersMap[tp.team_id]) teamPlayersMap[tp.team_id] = [];
+        teamPlayersMap[tp.team_id].push({
+          player_id: tp.player_id,
+          player: tpPlayersMap.get(tp.player_id) ?? null,
+        });
+      }
+    }
+
+    const teamsWithPlayers = (teams ?? []).map((t) => ({
+      ...t,
+      players: teamPlayersMap[t.id] ?? [],
+    }));
+
+    const { data: stats, error: statsError } = await supabaseAdmin
+      .from("game_player_stats")
+      .select("id, game_id, player_id, goals, assists, own_goals, saves, yellow_cards, red_cards, rating, notes, created_at, updated_at")
+      .eq("game_id", data.id);
+    if (statsError) throw new Error(statsError.message);
+
+    const statsPlayerIds = [...new Set((stats ?? []).map((s) => s.player_id))];
+    const statsPlayersMap = await fetchPlayersMap(statsPlayerIds);
+
+    const statsWithPlayers = (stats ?? []).map((s) => ({
+      ...s,
+      player: statsPlayersMap.get(s.player_id) ?? null,
+    }));
+
+    const { data: result, error: resultError } = await supabaseAdmin
+      .from("game_results")
+      .select("id, game_id, score_a, score_b, mvp_player_id, team_a_id, team_b_id, status, notes, created_at, updated_at")
+      .eq("game_id", data.id)
+      .maybeSingle();
+    if (resultError) throw new Error(resultError.message);
+
+    return {
+      game,
+      location,
+      confirmations: confirmationsWithPlayers,
+      myPayment,
+      teams: teamsWithPlayers,
+      stats: statsWithPlayers,
+      result: result ?? null,
+    };
   });
 
 export const getHomeData = createServerFn({ method: "GET" }).handler(async () => {
   const me = await requirePlayer();
   const today = new Date().toISOString().slice(0, 10);
 
-  const { data: nextGame } = await supabaseAdmin
+  const { data: nextGame, error: nextGameError } = await supabaseAdmin
     .from("games")
     .select("*")
     .gte("date", today)
@@ -161,8 +252,18 @@ export const getHomeData = createServerFn({ method: "GET" }).handler(async () =>
     .limit(1)
     .maybeSingle();
 
+  if (nextGameError) throw new Error(nextGameError.message);
+
   if (!nextGame) {
-    return { me, nextGame: null, confirmations: [], myConfirmation: null, myPayment: null, location: null, result: null };
+    return {
+      me,
+      nextGame: null,
+      confirmations: [],
+      myConfirmation: null,
+      myPayment: null,
+      location: null,
+      result: null,
+    };
   }
 
   const { data: location } = nextGame.location_id
@@ -173,28 +274,45 @@ export const getHomeData = createServerFn({ method: "GET" }).handler(async () =>
         .maybeSingle()
     : { data: null };
 
-  const { data: confs } = await supabaseAdmin
+  const { data: confirmations, error: confError } = await supabaseAdmin
     .from("confirmations")
-    .select("status, player_id, players(id, name, avatar_url, position)")
+    .select("id, game_id, player_id, status, confirmation_order, notes, created_at")
     .eq("game_id", nextGame.id);
+  if (confError) throw new Error(confError.message);
 
-  const myConfirmation = (confs ?? []).find((c: any) => c.player_id === me.id) ?? null;
+  const confPlayerIds = [...new Set((confirmations ?? []).map((c) => c.player_id))];
+  const confPlayersMap = await fetchPlayersMap(confPlayerIds);
+
+  const confirmationsWithPlayers = (confirmations ?? []).map((c) => ({
+    ...c,
+    player: confPlayersMap.get(c.player_id) ?? null,
+  }));
+
+  const myConfirmation = confirmationsWithPlayers.find((c) => c.player_id === me.id) ?? null;
 
   const { data: myPayment } = await supabaseAdmin
     .from("payments")
-    .select("*")
+    .select("id, game_id, player_id, amount, status, paid_at, notes, proof_url, approved_by_admin_at")
     .eq("game_id", nextGame.id)
     .eq("player_id", me.id)
     .maybeSingle();
 
   const { data: result, error: resultError } = await supabaseAdmin
     .from("game_results")
-    .select("*")
+    .select("id, game_id, score_a, score_b, mvp_player_id, team_a_id, team_b_id, status, notes, created_at, updated_at")
     .eq("game_id", nextGame.id)
     .maybeSingle();
   if (resultError) throw new Error(resultError.message);
 
-  return { me, nextGame, confirmations: confs ?? [], myConfirmation, myPayment, location, result: result ?? null };
+  return {
+    me,
+    nextGame: { ...nextGame, location },
+    confirmations: confirmationsWithPlayers,
+    myConfirmation,
+    myPayment,
+    location,
+    result: result ?? null,
+  };
 });
 
 export const setMyConfirmation = createServerFn({ method: "POST" })
@@ -206,10 +324,26 @@ export const setMyConfirmation = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const me = await requirePlayer();
+
+    const { data: existing } = await supabaseAdmin
+      .from("confirmations")
+      .select("confirmation_order")
+      .eq("game_id", data.gameId)
+      .order("confirmation_order", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const nextOrder = (existing?.confirmation_order ?? 0) + 1;
+
     const { error } = await supabaseAdmin
       .from("confirmations")
       .upsert(
-        { game_id: data.gameId, player_id: me.id, status: data.status },
+        {
+          game_id: data.gameId,
+          player_id: me.id,
+          status: data.status,
+          confirmation_order: data.status === "confirmed" ? nextOrder : null,
+        },
         { onConflict: "game_id, player_id" },
       );
     if (error) throw new Error(error.message);
@@ -230,7 +364,7 @@ export const listMyPayments = createServerFn({ method: "GET" }).handler(async ()
   const me = await requirePlayer();
   const { data, error } = await supabaseAdmin
     .from("payments")
-    .select("*, games(id, title, date, time)")
+    .select("id, game_id, player_id, amount, status, paid_at, notes, proof_url, approved_by_admin_at, admin_notes, created_at, updated_at")
     .eq("player_id", me.id)
     .order("created_at", { ascending: false });
   if (error) return { data: [], error: error.message };
@@ -241,12 +375,28 @@ export const myAttendanceHistory = createServerFn({ method: "GET" }).handler(asy
   const me = await requirePlayer();
   const { data, error } = await supabaseAdmin
     .from("confirmations")
-    .select("status, games(id, title, date, time)")
+    .select("status, game_id, created_at")
     .eq("player_id", me.id)
     .eq("status", "confirmed")
     .order("created_at", { ascending: false });
   if (error) return { data: [], error: error.message };
-  return { data: data ?? [], error: null as string | null };
+
+  const gameIds = [...new Set((data ?? []).map((c) => c.game_id).filter(Boolean))];
+  let gamesMap = new Map<string, { id: string; title: string; date: string; time: string }>();
+  if (gameIds.length > 0) {
+    const { data: games } = await supabaseAdmin
+      .from("games")
+      .select("id, title, date, time")
+      .in("id", gameIds);
+    gamesMap = new Map((games ?? []).map((g) => [g.id, g]));
+  }
+
+  const enriched = (data ?? []).map((c) => ({
+    ...c,
+    games: gamesMap.get(c.game_id) ?? null,
+  }));
+
+  return { data: enriched, error: null as string | null };
 });
 
 export const getPlayerPublicProfile = createServerFn({ method: "POST" })
@@ -256,15 +406,15 @@ export const getPlayerPublicProfile = createServerFn({ method: "POST" })
 
     const { data: player, error: playerError } = await supabaseAdmin
       .from("players")
-      .select("id, name, avatar_url, position")
+      .select("id, name, avatar_url, position, preferred_position, nickname, phone")
       .eq("id", data.playerId)
       .maybeSingle();
     if (playerError) throw new Error(playerError.message);
     if (!player) return { player: null, stats: null, recentGames: [], error: null as string | null };
 
     const { data: statsRows, error: statsError } = await supabaseAdmin
-      .from("game_stats")
-      .select("game_id, goals, assists, rating, created_at")
+      .from("game_player_stats")
+      .select("id, game_id, player_id, goals, assists, saves, rating, created_at")
       .eq("player_id", data.playerId);
     if (statsError) throw new Error(statsError.message);
 
@@ -278,7 +428,7 @@ export const getPlayerPublicProfile = createServerFn({ method: "POST" })
         .order("date", { ascending: false })
         .limit(6);
       if (gamesError) throw new Error(gamesError.message);
-      recentGames = (games ?? []) as Array<{ id: string; title: string; date: string; time: string }>;
+      recentGames = games ?? [];
     }
 
     const { count: confirmationsCount, error: confError } = await supabaseAdmin
@@ -290,6 +440,7 @@ export const getPlayerPublicProfile = createServerFn({ method: "POST" })
 
     const totalGoals = (statsRows ?? []).reduce((sum, s) => sum + Number(s.goals ?? 0), 0);
     const totalAssists = (statsRows ?? []).reduce((sum, s) => sum + Number(s.assists ?? 0), 0);
+    const totalSaves = (statsRows ?? []).reduce((sum, s) => sum + Number(s.saves ?? 0), 0);
     const ratings = (statsRows ?? []).map((s) => Number(s.rating)).filter((v) => Number.isFinite(v));
     const avgRating = ratings.length > 0 ? ratings.reduce((s, r) => s + r, 0) / ratings.length : null;
 
@@ -298,12 +449,63 @@ export const getPlayerPublicProfile = createServerFn({ method: "POST" })
       stats: {
         totalGoals,
         totalAssists,
+        totalSaves,
         totalGames: confirmationsCount ?? 0,
         averageRating: avgRating,
       },
       recentGames,
       error: null as string | null,
     };
+  });
+
+export const submitMyGameStats = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) =>
+    z.object({
+      gameId: z.string().uuid(),
+      goals: z.number().int().min(0).default(0),
+      assists: z.number().int().min(0).default(0),
+      own_goals: z.number().int().min(0).default(0),
+      saves: z.number().int().min(0).default(0),
+      yellow_cards: z.number().int().min(0).default(0),
+      red_cards: z.number().int().min(0).default(0),
+      rating: z.number().int().min(1).max(10).nullable().optional(),
+      notes: z.string().max(500).nullable().optional(),
+    }).parse(d),
+  )
+  .handler(async ({ data }) => {
+    const me = await requirePlayer();
+
+    const { data: conf, error: confError } = await supabaseAdmin
+      .from("confirmations")
+      .select("id")
+      .eq("game_id", data.gameId)
+      .eq("player_id", me.id)
+      .eq("status", "confirmed")
+      .maybeSingle();
+    if (confError) throw new Error(confError.message);
+    if (!conf) throw new Error("Você precisa confirmar presença no jogo para registrar estatísticas.");
+
+    const { error } = await supabaseAdmin
+      .from("game_player_stats")
+      .upsert(
+        {
+          game_id: data.gameId,
+          player_id: me.id,
+          goals: data.goals,
+          assists: data.assists,
+          own_goals: data.own_goals,
+          saves: data.saves,
+          yellow_cards: data.yellow_cards,
+          red_cards: data.red_cards,
+          rating: data.rating ?? null,
+          notes: data.notes ?? null,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "game_id,player_id" },
+      );
+
+    if (error) throw new Error(error.message);
+    return { success: true };
   });
 
 export const getRankingStats = createServerFn({ method: "POST" })
@@ -336,7 +538,7 @@ export const getRankingStats = createServerFn({ method: "POST" })
 
     let statsQuery = supabaseAdmin
       .from("game_player_stats")
-      .select("player_id, goals, assists, rating, game_id");
+      .select("id, player_id, game_id, goals, assists, saves, rating, created_at");
     if (validGameIds) statsQuery = statsQuery.in("game_id", validGameIds);
     const { data: statsRows, error: statsError } = await statsQuery;
     if (statsError) throw new Error(statsError.message);
@@ -344,31 +546,30 @@ export const getRankingStats = createServerFn({ method: "POST" })
     const playerIds = [...new Set((statsRows ?? []).map((row) => row.player_id))];
     if (playerIds.length === 0) return { ranking: [], error: null as string | null };
 
-    const { data: players, error: playersError } = await supabaseAdmin
-      .from("players")
-      .select("id, name, avatar_url, position")
-      .in("id", playerIds);
-    if (playersError) throw new Error(playersError.message);
+    const playersMap = await fetchPlayersMap(playerIds);
 
     const byPlayer = new Map<string, any>();
-    for (const p of players ?? []) {
-      byPlayer.set(p.id, {
+    for (const [id, p] of playersMap) {
+      byPlayer.set(id, {
         playerId: p.id,
         name: p.name,
         avatar_url: p.avatar_url,
-        position: p.position,
+        position: p.preferred_position ?? p.position,
         goals: 0,
         assists: 0,
+        saves: 0,
         games: 0,
         ratingSum: 0,
         ratingCount: 0,
       });
     }
+
     for (const row of statsRows ?? []) {
       const item = byPlayer.get(row.player_id);
       if (!item) continue;
       item.goals += Number(row.goals ?? 0);
       item.assists += Number(row.assists ?? 0);
+      item.saves += Number(row.saves ?? 0);
       item.games += 1;
       if (row.rating !== null && row.rating !== undefined) {
         item.ratingSum += Number(row.rating);

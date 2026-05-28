@@ -27,7 +27,7 @@ function AdminLoginPage() {
       if (result.ok && result.token) {
         setStoredToken(result.token); // Reusa o mesmo localStorage
         toast.success("Bem-vindo, Admin!");
-        navigate({ to: "/admin" });
+        navigate({ to: "/admin/jogos" });
       } else {
         toast.error(result.reason || "Senha incorreta");
       }
