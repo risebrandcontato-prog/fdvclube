@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { getGameDetail, setMyConfirmation, submitMyGameStats } from "@/lib/games.functions";
@@ -43,11 +43,18 @@ import { PaymentBadge } from "@/components/PaymentBadge";
 export const Route = createFileRoute("/app/jogos/$id")({
   component: GameDetailPage,
   loader: async ({ context: { queryClient }, params: { id } }) => {
-    await queryClient.ensureQueryData({
-      queryKey: ["game", id],
-      queryFn: () => getGameDetail({ data: { id } }),
-      staleTime: 1000 * 60 * 5,
-    });
+    try {
+      await queryClient.ensureQueryData({
+        queryKey: ["game", id],
+        queryFn: () => getGameDetail({ data: { id } }),
+        staleTime: 1000 * 60 * 5,
+      });
+    } catch (error) {
+      if (error instanceof Error && error.message === "UNAUTHENTICATED") {
+        throw redirect({ to: "/" });
+      }
+      throw error;
+    }
   },
 });
 
@@ -88,6 +95,17 @@ const teamColors: Record<string, { bg: string; text: string; border: string; bad
     badge: "bg-red-500",
   },
 };
+
+const positionGroups: Array<{
+  key: "goleiro" | "defensor" | "meio" | "atacante";
+  label: string;
+  icon: string;
+}> = [
+  { key: "goleiro", label: "Goleiros", icon: "🧤" },
+  { key: "defensor", label: "Defensores", icon: "🛡️" },
+  { key: "meio", label: "Meios", icon: "⚙️" },
+  { key: "atacante", label: "Atacantes", icon: "⚡" },
+];
 
 function CountdownTimer({ targetDate }: { targetDate: string }) {
   const [timeLeft, setTimeLeft] = useState<{
@@ -194,6 +212,22 @@ function GameDetailPage() {
   });
 
   const st = statusConfig[gameStatus] ?? statusConfig.scheduled;
+
+  const confirmedByPosition = positionGroups.reduce((acc, g) => {
+    acc[g.key] = confirmedList.filter((c: any) => {
+      const p = c.player;
+      // IMPORTANT: group by the canonical enum position (goleiro/defensor/meio/atacante).
+      // preferred_position may contain custom/freeform values and would break grouping.
+      const pos = p?.position as string | undefined;
+      return pos === g.key;
+    });
+    return acc;
+  }, {} as Record<"goleiro" | "defensor" | "meio" | "atacante", any[]>);
+
+  const confirmedOther = confirmedList.filter((c: any) => {
+    const pos = c?.player?.position as string | undefined;
+    return pos !== "goleiro" && pos !== "defensor" && pos !== "meio" && pos !== "atacante";
+  });
 
   const [editStats, setEditStats] = useState(false);
   const [statForm, setStatForm] = useState({
@@ -758,28 +792,68 @@ function GameDetailPage() {
         <section className="space-y-3">
           <h2 className="text-sm font-semibold inline-flex items-center gap-1.5">
             <CircleCheck className="h-4 w-4 text-emerald-400" />
-            Quem vai ({confirmedCount})
+            Confirmados ({confirmedCount})
           </h2>
           {confirmedList.length === 0 ? (
-            <p className="text-xs text-muted-foreground">
-              Ninguém confirmou presença ainda.
-            </p>
+            <p className="text-xs text-muted-foreground">Ninguém confirmou presença ainda.</p>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {confirmedList.map((c: any, idx: number) => {
-                const p = c.player;
+            <div className="space-y-3">
+              {positionGroups.map((g) => {
+                const list = confirmedByPosition[g.key] ?? [];
+                if (list.length === 0) return null;
                 return (
-                  <div key={idx} className="relative">
-                    <PlayerCard
-                      playerId={c.player_id}
-                      name={p?.name ?? "Jogador"}
-                      avatarUrl={p?.avatar_url}
-                      position={p?.position}
-                      status={c.status}
-                    />
-                  </div>
+                  <Card key={g.key} className="p-3 border border-border/60">
+                    <div className="flex items-center justify-between">
+                      <div className="text-sm font-semibold">
+                        <span className="mr-1">{g.icon}</span>
+                        {g.label}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        ({list.length})
+                      </div>
+                    </div>
+                    <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {list.map((c: any) => {
+                        const p = c.player;
+                        return (
+                          <PlayerCard
+                            key={c.player_id}
+                            playerId={c.player_id}
+                            name={p?.name ?? "Jogador"}
+                            avatarUrl={p?.avatar_url}
+                            position={p?.position}
+                            status="confirmed"
+                          />
+                        );
+                      })}
+                    </div>
+                  </Card>
                 );
               })}
+
+              {confirmedOther.length > 0 ? (
+                <Card className="p-3 border border-border/60">
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm font-semibold">Outros</div>
+                    <div className="text-xs text-muted-foreground">({confirmedOther.length})</div>
+                  </div>
+                  <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {confirmedOther.map((c: any) => {
+                      const p = c.player;
+                      return (
+                        <PlayerCard
+                          key={c.player_id}
+                          playerId={c.player_id}
+                          name={p?.name ?? "Jogador"}
+                          avatarUrl={p?.avatar_url}
+                          position={p?.position ?? "—"}
+                          status="confirmed"
+                        />
+                      );
+                    })}
+                  </div>
+                </Card>
+              ) : null}
             </div>
           )}
         </section>
@@ -856,15 +930,19 @@ function GameDetailPage() {
                 })}
               </span>
             </div>
-            {myPayment && (
-              <div className="flex items-center justify-between pt-2 border-t border-border/40">
-                <span className="text-xs text-muted-foreground inline-flex items-center gap-1.5">
-                  <CreditCard className="h-3.5 w-3.5" />
-                  Seu pagamento
-                </span>
+            <div className="flex items-center justify-between pt-2 border-t border-border/40">
+              <span className="text-xs text-muted-foreground inline-flex items-center gap-1.5">
+                <CreditCard className="h-3.5 w-3.5" />
+                Meu pagamento
+              </span>
+              {myPayment?.status ? (
                 <PaymentBadge status={myPayment.status} />
-              </div>
-            )}
+              ) : (
+                <span className="inline-flex items-center rounded-full border border-border bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                  Não registrado
+                </span>
+              )}
+            </div>
             {game.notes && (
               <div className="pt-2 border-t border-border/40">
                 <span className="text-xs text-muted-foreground inline-flex items-center gap-1.5 mb-1">

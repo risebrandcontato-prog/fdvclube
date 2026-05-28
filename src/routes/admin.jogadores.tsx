@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
@@ -11,6 +11,20 @@ import { adminListPlayers, adminSetPlayerBlocked, adminDeletePlayer } from "@/li
 
 export const Route = createFileRoute("/admin/jogadores")({
   component: JogadoresPage,
+  loader: async ({ context: { queryClient } }) => {
+    try {
+      await queryClient.ensureQueryData({
+        queryKey: ["admin-players"],
+        queryFn: () => adminListPlayers(),
+        staleTime: 1000 * 60 * 5,
+      });
+    } catch (error) {
+      if (error instanceof Error && error.message === "UNAUTHENTICATED") {
+        throw redirect({ to: "/admin/login" });
+      }
+      throw error;
+    }
+  },
 });
 
 function JogadoresPage() {

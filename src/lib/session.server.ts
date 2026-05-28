@@ -12,8 +12,22 @@ export type SessionPlayer = {
   is_blocked: boolean;
 };
 
+function getCookieValue(cookieHeader: string | null | undefined, key: string): string | null {
+  if (!cookieHeader) return null;
+  // Minimal cookie parse: "a=b; c=d"
+  const parts = cookieHeader.split(";");
+  for (const p of parts) {
+    const [k, ...rest] = p.trim().split("=");
+    if (!k) continue;
+    if (k === key) return decodeURIComponent(rest.join("=") || "");
+  }
+  return null;
+}
+
 export async function resolveSessionPlayer(): Promise<SessionPlayer | null> {
-  const token = getRequestHeader("x-fdv-token");
+  const token =
+    getRequestHeader("x-fdv-token") ??
+    getCookieValue(getRequestHeader("cookie"), "fdv_session_token");
   if (!token) return null;
 
   const { data: session } = await supabaseAdmin

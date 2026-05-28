@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
@@ -20,11 +20,18 @@ import { Card } from "@/components/ui/card";
 export const Route = createFileRoute("/app/jogos/")({
   component: JogosListPage,
   loader: async ({ context: { queryClient } }) => {
-    await queryClient.ensureQueryData({
-      queryKey: ["games"],
-      queryFn: () => listGames(),
-      staleTime: 1000 * 60 * 5,
-    });
+    try {
+      await queryClient.ensureQueryData({
+        queryKey: ["games"],
+        queryFn: () => listGames(),
+        staleTime: 1000 * 60 * 5,
+      });
+    } catch (error) {
+      if (error instanceof Error && error.message === "UNAUTHENTICATED") {
+        throw redirect({ to: "/" });
+      }
+      throw error;
+    }
   },
 });
 
@@ -152,9 +159,7 @@ function GameCard({ game, player }: { game: any; player: any }) {
   const myConf = game.confirmations?.find(
     (c: any) => c.player_id === player?.id
   );
-  const myPay = game.payments?.find(
-    (p: any) => p.player_id === player?.id
-  );
+  const myPay = game.myPayment ?? null;
 
   const dateObj = new Date(`${game.date}T${game.time}`);
   const day = dateObj.getDate();
@@ -178,19 +183,38 @@ function GameCard({ game, player }: { game: any; player: any }) {
       className="block"
     >
       <Card className="overflow-hidden cursor-pointer border hover:border-primary/40 transition-all duration-200 hover:shadow-md group">
+        {/* Cover */}
+        <div className="relative h-36 w-full overflow-hidden">
+          {game.location?.photo_url ? (
+            <img
+              src={game.location.photo_url}
+              alt={game.location?.name ?? "Campo"}
+              className="h-full w-full object-cover"
+              loading="lazy"
+            />
+          ) : (
+            <div className="h-full w-full bg-linear-to-br from-primary/15 via-muted to-background flex items-center justify-center">
+              <MapPin className="h-8 w-8 text-primary/35" />
+            </div>
+          )}
+          <div className="absolute inset-0 bg-linear-to-t from-background/80 via-background/30 to-transparent" />
+          <div className="absolute left-3 top-3">
+            <span
+              className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold border bg-background/70 backdrop-blur ${st.cls}`}
+            >
+              <span className={`w-1.5 h-1.5 rounded-full ${st.dot}`} />
+              {st.label}
+            </span>
+          </div>
+        </div>
+
         <div className="p-4">
           <div className="flex gap-4">
             {/* Date block */}
             <div className="flex flex-col items-center justify-start min-w-14 pt-1">
-              <span className="text-3xl font-bold text-primary leading-none">
-                {day}
-              </span>
-              <span className="text-xs font-semibold text-muted-foreground uppercase mt-1">
-                {month}
-              </span>
-              <span className="text-[10px] text-muted-foreground/70 capitalize mt-0.5 leading-none">
-                {weekday}
-              </span>
+              <span className="text-3xl font-bold text-primary leading-none">{day}</span>
+              <span className="text-xs font-semibold text-muted-foreground uppercase mt-1">{month}</span>
+              <span className="text-[10px] text-muted-foreground/70 capitalize mt-0.5 leading-none">{weekday}</span>
             </div>
 
             {/* Content */}
@@ -199,12 +223,6 @@ function GameCard({ game, player }: { game: any; player: any }) {
                 <h3 className="font-semibold text-[15px] leading-snug truncate group-hover:text-primary transition-colors">
                   {game.title}
                 </h3>
-                <span
-                  className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold border shrink-0 mt-0.5 ${st.cls}`}
-                >
-                  <span className={`w-1.5 h-1.5 rounded-full ${st.dot}`} />
-                  {st.label}
-                </span>
               </div>
               {game.result ? (
                 <div className="mb-2 text-xs font-semibold text-primary">
@@ -219,25 +237,14 @@ function GameCard({ game, player }: { game: any; player: any }) {
                 </span>
                 <span className="inline-flex items-center gap-1 truncate">
                   <MapPin className="h-3.5 w-3.5 shrink-0" />
-                  {game.locations?.name ?? "Sem campo definido"}
+                  {game.location?.name ?? "Sem campo definido"}
                 </span>
-                {game.locations?.address && (
+                {game.location?.address && (
                   <span className="truncate text-muted-foreground/70">
-                    {game.locations.address}
+                    {game.location.address}
                   </span>
                 )}
               </div>
-
-              {game.locations?.photo_url && (
-                <div className="mb-3 rounded-lg overflow-hidden h-32 w-full">
-                  <img
-                    src={game.locations.photo_url}
-                    alt={game.locations.name}
-                    className="w-full h-full object-cover"
-                    loading="lazy"
-                  />
-                </div>
-              )}
 
               <div className="flex items-center gap-3 mb-3">
                 <div className="flex -space-x-2 shrink-0">
@@ -245,17 +252,17 @@ function GameCard({ game, player }: { game: any; player: any }) {
                     <div
                       key={idx}
                       className="w-8 h-8 rounded-full border-2 border-background bg-muted flex items-center justify-center text-[10px] font-bold overflow-hidden"
-                      title={c.players?.name ?? "Jogador"}
+                      title={c.player?.name ?? "Jogador"}
                     >
-                      {c.players?.avatar_url ? (
+                      {c.player?.avatar_url ? (
                         <img
-                          src={c.players.avatar_url}
+                          src={c.player.avatar_url}
                           alt=""
                           className="w-full h-full object-cover"
                         />
                       ) : (
                         <span className="text-muted-foreground">
-                          {(c.players?.name ?? "?").charAt(0).toUpperCase()}
+                          {(c.player?.name ?? "?").charAt(0).toUpperCase()}
                         </span>
                       )}
                     </div>
@@ -310,18 +317,28 @@ function GameCard({ game, player }: { game: any; player: any }) {
                     </span>
                   )}
 
-                  {myPay && (
+                  {myPay ? (
                     <span
                       className={`inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-md ${
                         myPay.status === "paid"
                           ? "text-emerald-400 bg-emerald-500/10"
+                          : myPay.status === "late"
+                          ? "text-red-400 bg-red-500/10"
+                          : myPay.status === "exempt"
+                          ? "text-blue-400 bg-blue-500/10"
                           : "text-amber-400 bg-amber-500/10"
                       }`}
                     >
                       <CreditCard className="h-3.5 w-3.5" />
-                      {myPay.status === "paid" ? "Pago" : "Pendente"}
+                      {myPay.status === "paid"
+                        ? "Pago"
+                        : myPay.status === "late"
+                        ? "Atrasado"
+                        : myPay.status === "exempt"
+                        ? "Isento"
+                        : "Pendente"}
                     </span>
-                  )}
+                  ) : null}
                 </div>
 
                 <div className="flex items-center gap-2 shrink-0">
@@ -385,7 +402,7 @@ function PastGameCard({ game, player }: { game: any; player: any }) {
             <div className="flex items-center gap-2 text-[10px] text-muted-foreground mb-1.5">
               <span className="inline-flex items-center gap-1">
                 <MapPin className="h-3 w-3" />
-                {game.locations?.name ?? "Sem campo"}
+                {game.location?.name ?? "Sem campo"}
               </span>
               <span>·</span>
               <span className="inline-flex items-center gap-1">
@@ -401,15 +418,15 @@ function PastGameCard({ game, player }: { game: any; player: any }) {
                     key={idx}
                     className="w-5 h-5 rounded-full border border-background bg-muted flex items-center justify-center text-[8px] font-bold overflow-hidden"
                   >
-                    {c.players?.avatar_url ? (
+                    {c.player?.avatar_url ? (
                       <img
-                        src={c.players.avatar_url}
+                        src={c.player.avatar_url}
                         alt=""
                         className="w-full h-full object-cover"
                       />
                     ) : (
                       <span>
-                        {(c.players?.name ?? "?").charAt(0).toUpperCase()}
+                        {(c.player?.name ?? "?").charAt(0).toUpperCase()}
                       </span>
                     )}
                   </div>

@@ -1083,6 +1083,14 @@ export const adminSetResult = createServerFn({ method: "POST" })
 export const adminDashboard = createServerFn({ method: "GET" }).handler(async () => {
   await requireAdminAccess();
   const today = new Date().toISOString().slice(0, 10);
+
+  const { data: settings, error: settingsError } = await supabaseAdmin
+    .from("app_settings")
+    .select("whatsapp_group_url")
+    .eq("id", 1)
+    .maybeSingle();
+  if (settingsError) throw new Error(settingsError.message);
+
   const { data: nextGame } = await supabaseAdmin
     .from("games")
     .select("*")
@@ -1119,5 +1127,46 @@ export const adminDashboard = createServerFn({ method: "GET" }).handler(async ()
     .select("id", { count: "exact", head: true })
     .eq("is_blocked", false);
 
-  return { nextGame, confirmedCount, paidSum, pendingSum, playersCount: playersCount ?? 0 };
+  return {
+    nextGame,
+    confirmedCount,
+    paidSum,
+    pendingSum,
+    playersCount: playersCount ?? 0,
+    whatsapp_group_url: settings?.whatsapp_group_url ?? null,
+  };
 });
+
+// ─────────────────────────────────────────────
+// App Settings
+// ─────────────────────────────────────────────
+export const adminUpdateAppSettings = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) =>
+    z
+      .object({
+        whatsapp_group_url: z.string().trim().max(500).nullable(),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data }) => {
+    await requireAdminAccess();
+
+    const url = data.whatsapp_group_url?.trim() ? data.whatsapp_group_url.trim() : null;
+    if (url && !/^https:\/\/chat\.whatsapp\.com\//i.test(url)) {
+      throw new Error("Link inválido. Use um link do tipo https://chat.whatsapp.com/...");
+    }
+
+    const { error } = await supabaseAdmin
+      .from("app_settings")
+      .upsert(
+        {
+          id: 1,
+          whatsapp_group_url: url,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "id" },
+      );
+
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });

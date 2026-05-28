@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
@@ -24,6 +24,20 @@ type Metric = "goals" | "assists" | "avgRating" | "games" | "saves" | "ownGoals"
 
 export const Route = createFileRoute("/app/estatisticas")({
   component: RankingPage,
+  loader: async ({ context: { queryClient } }) => {
+    try {
+      await queryClient.ensureQueryData({
+        queryKey: ["ranking", "all"],
+        queryFn: () => getRankingStats({ data: { period: "all" } }),
+        staleTime: 1000 * 60 * 5,
+      });
+    } catch (error) {
+      if (error instanceof Error && error.message === "UNAUTHENTICATED") {
+        throw redirect({ to: "/" });
+      }
+      throw error;
+    }
+  },
 });
 
 function RankingPage() {

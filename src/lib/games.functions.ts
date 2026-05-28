@@ -242,6 +242,13 @@ export const getHomeData = createServerFn({ method: "GET" }).handler(async () =>
   const me = await requirePlayer();
   const today = new Date().toISOString().slice(0, 10);
 
+  const { data: settings, error: settingsError } = await supabaseAdmin
+    .from("app_settings")
+    .select("whatsapp_group_url")
+    .eq("id", 1)
+    .maybeSingle();
+  if (settingsError) throw new Error(settingsError.message);
+
   const { data: nextGame, error: nextGameError } = await supabaseAdmin
     .from("games")
     .select("*")
@@ -257,6 +264,7 @@ export const getHomeData = createServerFn({ method: "GET" }).handler(async () =>
   if (!nextGame) {
     return {
       me,
+      whatsapp_group_url: settings?.whatsapp_group_url ?? null,
       nextGame: null,
       confirmations: [],
       myConfirmation: null,
@@ -306,6 +314,7 @@ export const getHomeData = createServerFn({ method: "GET" }).handler(async () =>
 
   return {
     me,
+    whatsapp_group_url: settings?.whatsapp_group_url ?? null,
     nextGame: { ...nextGame, location },
     confirmations: confirmationsWithPlayers,
     myConfirmation,

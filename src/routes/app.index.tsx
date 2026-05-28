@@ -15,24 +15,43 @@ import {
   TrendingUp,
   CreditCard,
   ChevronRight,
-  Shield,
-  Footprints,
-  Target,
+  Volleyball,
+  Shirt,
+  MessageCircle,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { PlayerAvatar } from "@/components/PlayerAvatar";
 import { PlayerCard } from "@/components/PlayerCard";
-import { PaymentBadge, ConfirmBadge } from "@/components/Badges";
+import { ConfirmBadge } from "@/components/Badges";
 import { FdvLogo } from "@/components/FdvLogo";
 import { PushNotificationToggle } from "@/components/PushNotificationToggle";
 import { getHomeData, setMyConfirmation, getRankingStats } from "@/lib/games.functions";
 import { useSession } from "@/hooks/use-session";
 import { supabase } from "@/integrations/supabase/client";
+import { PaymentBadge } from "@/components/PaymentBadge";
 
 export const Route = createFileRoute("/app/")({
   component: HomePage,
 });
+
+const positionGroups: Array<{
+  key: "goleiro" | "defensor" | "meio" | "atacante";
+  label: string;
+  icon: string;
+}> = [
+  { key: "goleiro", label: "Goleiros", icon: "🧤" },
+  { key: "defensor", label: "Defensores", icon: "🛡️" },
+  { key: "meio", label: "Meios", icon: "⚙️" },
+  { key: "atacante", label: "Atacantes", icon: "⚡" },
+];
+
+const vestsUi: Record<string, { label: string; cls: string }> = {
+  none: { label: "Sem coletes", cls: "bg-muted text-muted-foreground border-border" },
+  orange: { label: "Coletes laranja", cls: "bg-orange-500/10 text-orange-600 border-orange-500/20" },
+  black: { label: "Coletes pretos", cls: "bg-zinc-500/10 text-zinc-700 border-zinc-500/20" },
+  both: { label: "Coletes (2 cores)", cls: "bg-blue-500/10 text-blue-700 border-blue-500/20" },
+};
 
 function HomePage() {
   const { player } = useSession();
@@ -82,10 +101,26 @@ function HomePage() {
   const nextGame = data?.nextGame;
   const myConf = data?.myConfirmation;
   const myPayment = data?.myPayment;
+  const whatsappGroupUrl = (data as any)?.whatsapp_group_url as string | null | undefined;
   const gameLocation = nextGame?.location ?? data?.location;
   const confirmations = data?.confirmations ?? [];
   const confirmedList = confirmations.filter((c: any) => c.status === "confirmed");
   const result = data?.result;
+
+  const confirmedByPosition = positionGroups.reduce((acc, g) => {
+    acc[g.key] = confirmedList.filter((c: any) => {
+      const p = c.player;
+      // Group by canonical enum position; preferred_position can be custom and break grouping.
+      const pos = p?.position as string | undefined;
+      return pos === g.key;
+    });
+    return acc;
+  }, {} as Record<"goleiro" | "defensor" | "meio" | "atacante", any[]>);
+
+  const confirmedOther = confirmedList.filter((c: any) => {
+    const pos = c?.player?.position as string | undefined;
+    return pos !== "goleiro" && pos !== "defensor" && pos !== "meio" && pos !== "atacante";
+  });
 
   // Ranking do jogador logado
   const myRank = rankingData?.ranking?.find((r: any) => r.playerId === player?.id);
@@ -157,9 +192,43 @@ function HomePage() {
       ) : (
         <>
           {/* Próximo Jogo */}
-          <Card className="bg-linear-to-br from-primary/5 to-primary/10 border-primary/20 p-5 shadow-sm">
+          <Card className="overflow-hidden bg-linear-to-br from-primary/5 to-primary/10 border-primary/20 shadow-sm">
+            {/* cover */}
+            <div className="relative h-40 w-full overflow-hidden">
+              {gameLocation?.photo_url ? (
+                <img
+                  src={gameLocation.photo_url}
+                  alt={gameLocation.name ?? "Local"}
+                  className="h-full w-full object-cover"
+                  loading="lazy"
+                />
+              ) : (
+                <div className="h-full w-full bg-linear-to-br from-primary/15 via-muted to-background flex items-center justify-center">
+                  <MapPin className="h-10 w-10 text-primary/35" />
+                </div>
+              )}
+              <div className="absolute inset-0 bg-linear-to-t from-background/85 via-background/40 to-transparent" />
+              <div className="absolute left-4 top-4 flex items-center gap-2">
+                <div className="text-xs uppercase tracking-wider text-primary font-semibold bg-background/70 backdrop-blur border border-border/50 px-2.5 py-1 rounded-full">
+                  Próximo jogo
+                </div>
+                {nextGame.has_ball ? (
+                  <span className="inline-flex items-center gap-1 rounded-full border border-primary/20 bg-primary/10 px-2 py-1 text-[10px] font-semibold text-primary">
+                    <Volleyball className="h-3 w-3" />
+                    Bola
+                  </span>
+                ) : null}
+                {nextGame.vests && nextGame.vests !== "none" ? (
+                  <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-semibold ${vestsUi[String(nextGame.vests)]?.cls ?? "bg-muted text-muted-foreground border-border"}`}>
+                    <Shirt className="h-3 w-3" />
+                    {vestsUi[String(nextGame.vests)]?.label ?? "Coletes"}
+                  </span>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="p-5">
             <div className="flex items-center justify-between mb-1">
-              <div className="text-xs uppercase tracking-wider text-primary font-semibold">Próximo jogo</div>
               {nextGame.status === "scheduled" && (
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 font-medium">
                   Agendado
@@ -168,19 +237,26 @@ function HomePage() {
             </div>
 
             <div className="mt-1 text-xl font-bold">{nextGame.title}</div>
-            <div className="mt-1.5 flex items-center gap-3 text-sm text-muted-foreground">
-              <span className="inline-flex items-center gap-1">
+            <div className="mt-2 grid grid-cols-2 gap-2 text-sm text-muted-foreground">
+              <div className="inline-flex items-center gap-1.5">
                 <Calendar className="h-3.5 w-3.5" />
                 {new Date(`${nextGame.date}T${nextGame.time}`).toLocaleDateString("pt-BR", {
-                  weekday: "long", day: "2-digit", month: "long",
+                  weekday: "long",
+                  day: "2-digit",
+                  month: "long",
                 })}
-              </span>
-            </div>
-            <div className="mt-0.5 flex items-center gap-3 text-sm text-muted-foreground">
-              <span className="inline-flex items-center gap-1">
+              </div>
+              <div className="inline-flex items-center gap-1.5 justify-end">
                 <Clock className="h-3.5 w-3.5" />
-                {nextGame.time}
-              </span>
+                {new Date(`${nextGame.date}T${nextGame.time}`).toLocaleTimeString("pt-BR", {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
+              </div>
+              <div className="col-span-2 inline-flex items-center gap-1.5">
+                <MapPin className="h-3.5 w-3.5 text-primary shrink-0" />
+                <span className="truncate">{gameLocation?.name ?? "Sem local"}</span>
+              </div>
             </div>
 
             {/* Resultado (se jogo já realizado) */}
@@ -258,7 +334,123 @@ function HomePage() {
                 {myConf?.status === "cancelled" ? "Cancelado" : "Cancelar"}
               </Button>
             </div>
+            {/* Confirmados por posição */}
+            <div className="mt-5 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">
+                  Confirmados por posição
+                </div>
+                <Link
+                  to="/app/jogos/$id"
+                  params={{ id: nextGame.id }}
+                  className="text-xs text-primary hover:underline inline-flex items-center gap-0.5"
+                >
+                  Ver detalhes <ChevronRight className="h-3 w-3" />
+                </Link>
+              </div>
+
+              <div className="grid grid-cols-1 gap-2">
+                {positionGroups.map((g) => {
+                  const list = confirmedByPosition[g.key] ?? [];
+                  if (list.length === 0) return null;
+                  return (
+                    <Card key={g.key} className="p-3 bg-background/60 border border-border/60">
+                      <div className="flex items-center justify-between">
+                        <div className="text-sm font-semibold">
+                          <span className="mr-1">{g.icon}</span>
+                          {g.label}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          ({list.length} confirmado{list.length === 1 ? "" : "s"})
+                        </div>
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {list.slice(0, 10).map((c: any) => {
+                          const p = c.player;
+                          return (
+                            <div key={c.player_id} className="inline-flex items-center gap-2 rounded-full border border-border/60 bg-background px-2 py-1">
+                              <PlayerAvatar name={p?.name} src={p?.avatar_url} className="h-6 w-6" />
+                              <span className="text-xs font-medium max-w-40 truncate">{p?.name ?? "Jogador"}</span>
+                            </div>
+                          );
+                        })}
+                        {list.length > 10 ? (
+                          <div className="inline-flex items-center rounded-full border border-border/60 bg-background px-2 py-1 text-xs text-muted-foreground">
+                            +{list.length - 10}
+                          </div>
+                        ) : null}
+                      </div>
+                    </Card>
+                  );
+                })}
+
+                {confirmedOther.length > 0 ? (
+                  <Card className="p-3 bg-background/60 border border-border/60">
+                    <div className="flex items-center justify-between">
+                      <div className="text-sm font-semibold">Outros</div>
+                      <div className="text-xs text-muted-foreground">
+                        ({confirmedOther.length} confirmado{confirmedOther.length === 1 ? "" : "s"})
+                      </div>
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {confirmedOther.slice(0, 10).map((c: any) => {
+                        const p = c.player;
+                        return (
+                          <div key={c.player_id} className="inline-flex items-center gap-2 rounded-full border border-border/60 bg-background px-2 py-1">
+                            <PlayerAvatar name={p?.name} src={p?.avatar_url} className="h-6 w-6" />
+                            <span className="text-xs font-medium max-w-40 truncate">{p?.name ?? "Jogador"}</span>
+                          </div>
+                        );
+                      })}
+                      {confirmedOther.length > 10 ? (
+                        <div className="inline-flex items-center rounded-full border border-border/60 bg-background px-2 py-1 text-xs text-muted-foreground">
+                          +{confirmedOther.length - 10}
+                        </div>
+                      ) : null}
+                    </div>
+                  </Card>
+                ) : null}
+              </div>
+            </div>
+          </div>
           </Card>
+
+          {/* WhatsApp */}
+          {whatsappGroupUrl ? (
+            <a
+              href={whatsappGroupUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block"
+            >
+              <Card className="bg-green-600 text-white border-green-700/30 p-4 rounded-xl shadow-sm transition-transform hover:scale-[1.01] active:scale-[0.99]">
+                <div className="flex items-center gap-3">
+                  <div className="h-11 w-11 rounded-xl bg-white/15 flex items-center justify-center">
+                    <MessageCircle className="h-6 w-6" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-semibold">Grupo da pelada</div>
+                    <div className="text-xs text-white/80 truncate">Entrar no grupo</div>
+                  </div>
+                  <ChevronRight className="h-5 w-5 text-white/80" />
+                </div>
+              </Card>
+            </a>
+          ) : (
+            <Card className="bg-green-600/15 text-foreground border-green-700/20 p-4 rounded-xl">
+              <div className="flex items-center gap-3">
+                <div className="h-11 w-11 rounded-xl bg-green-600/20 flex items-center justify-center">
+                  <MessageCircle className="h-6 w-6 text-green-700" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-semibold">Grupo da pelada</div>
+                  <div className="text-xs text-muted-foreground truncate">
+                    Link ainda não configurado pelo admin
+                  </div>
+                </div>
+              </div>
+            </Card>
+          )}
 
           {/* Pagamento */}
           <Card className="bg-card p-4">
@@ -272,9 +464,13 @@ function HomePage() {
                   </div>
                 </div>
               </div>
-              <PaymentBadge
-                status={(myPayment?.status as "paid" | "pending" | "late" | "exempt") ?? "pending"}
-              />
+              {myPayment?.status ? (
+                <PaymentBadge status={myPayment.status as any} size="sm" />
+              ) : (
+                <span className="inline-flex items-center rounded-full border border-border bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                  Não registrado
+                </span>
+              )}
             </div>
             {myPayment?.status === "pending" && (
               <div className="mt-2 text-xs text-amber-400 bg-amber-500/5 p-2 rounded-md">

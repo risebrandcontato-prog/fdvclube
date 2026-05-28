@@ -3,6 +3,17 @@ import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { getRequestHeader } from "@tanstack/react-start/server";
 
+function getCookieValue(cookieHeader: string | null | undefined, key: string): string | null {
+  if (!cookieHeader) return null;
+  const parts = cookieHeader.split(";");
+  for (const p of parts) {
+    const [k, ...rest] = p.trim().split("=");
+    if (!k) continue;
+    if (k === key) return decodeURIComponent(rest.join("=") || "");
+  }
+  return null;
+}
+
 function randomToken(): string {
   const arr = new Uint8Array(32);
   crypto.getRandomValues(arr);
@@ -65,7 +76,9 @@ export const validateAdminPassword = createServerFn({ method: "POST" })
 // ─────────────────────────────────────────────
 export const checkAdminToken = createServerFn({ method: "GET" }).handler(
   async () => {
-    const token = getRequestHeader("x-fdv-token");
+    const token =
+      getRequestHeader("x-fdv-token") ??
+      getCookieValue(getRequestHeader("cookie"), "fdv_session_token");
     if (!token) return { valid: false };
 
     const { data: session, error } = await supabaseAdmin
